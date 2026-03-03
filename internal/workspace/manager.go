@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"devswarm/internal/git"
@@ -303,6 +305,18 @@ func (wm *WorkspaceManager) FindNodeByPath(path string) (string, *types.Node, er
 		rel, err := filepath.Rel(nodePath, canonicalPath)
 		if err == nil && !filepath.IsAbs(rel) && rel != ".." && !filepath.HasPrefix(rel, "../") {
 			return name, &node, nil
+		}
+
+		// Fallback: Case-insensitive check for macOS/Windows
+		// If EvalSymlinks didn't normalize case (e.g. if paths don't fully exist or on some FS),
+		// we try comparing lowercase versions.
+		if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+			nodePathLower := strings.ToLower(nodePath)
+			canonicalPathLower := strings.ToLower(canonicalPath)
+			rel, err := filepath.Rel(nodePathLower, canonicalPathLower)
+			if err == nil && !filepath.IsAbs(rel) && rel != ".." && !filepath.HasPrefix(rel, "../") {
+				return name, &node, nil
+			}
 		}
 	}
 
