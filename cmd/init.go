@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"strings"
-
 	"devswarm/internal/git"
 	"devswarm/internal/workspace"
 
@@ -25,11 +23,11 @@ Clones the repository into a 'repo' subdirectory and sets up configuration.`,
 		if len(args) > 1 {
 			dirName = args[1]
 		} else {
-			// Infer from repo name (e.g. https://github.com/foo/bar.git -> bar_workspace)
+			// Infer from repo name (e.g. https://github.com/foo/bar.git -> bar_swarm)
 			base := filepath.Base(repoURL)
-			// Remove .git suffix if present
-			base = strings.TrimSuffix(base, ".git")
-			dirName = fmt.Sprintf("%s_workspace", base)
+			ext := filepath.Ext(base)
+			projectName := base[0 : len(base)-len(ext)]
+			dirName = fmt.Sprintf("%s_swarm", projectName)
 		}
 
 		fmt.Printf("Initializing DevSwarm for %s in %s...\n", repoURL, dirName)
@@ -59,6 +57,11 @@ Clones the repository into a 'repo' subdirectory and sets up configuration.`,
 			fmt.Printf("Failed to clone repository: %v\n", err)
 			// Cleanup could be added here
 			os.Exit(1)
+		}
+
+		// 4. Create initial VSCode workspace file
+		if err := wm.SyncVSCodeWorkspace(); err != nil {
+			fmt.Printf("Warning: Failed to create VSCode workspace file: %v\n", err)
 		}
 
 		fmt.Println("Workspace initialized successfully!")

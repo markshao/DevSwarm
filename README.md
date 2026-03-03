@@ -161,20 +161,36 @@ DevSwarm can automatically attach your IDE terminal to the correct Node's Tmux s
 - If it does, you are automatically attached to that node's **Tmux session**.
 - If not, you are attached to a **default** session.
 
+## 💻 IDE Integration (VSCode / Trae)
+
+DevSwarm automatically generates and maintains a standard `.code-workspace` file for seamless integration with VSCode and Trae IDE.
+
+### How to use
+1. After running `devswarm init` or `devswarm spawn`, a workspace file (e.g., `myproject.code-workspace`) is created in the root.
+2. **In VSCode / Trae**:
+   - Go to **File** -> **Open Workspace from File...**
+   - Select the generated `.code-workspace` file.
+3. You will see a multi-root workspace with:
+   - `main_repo`: The primary repository.
+   - `workspaces/<node-name>`: Each active node as a separate root folder.
+
+This allows you to edit files across multiple nodes simultaneously within a single IDE window, with full language server support.
+
 ## 🏗 Architecture
 
-- **Repo**: The single source of truth (Git repository).
-- **Nodes**: Ephemeral worktrees derived from the repo.
+- **Main Repo**: The single source of truth (Git repository).
+- **Workspaces**: Ephemeral worktrees derived from the repo.
 - **State**: A `state.json` file tracks the mapping between Nodes, Tmux sessions, and Git branches.
 
 ```text
 my_project_swarm/
 ├── .devswarm/
 │   └── state.json
-├── repo/                # Main .git repository
-└── nodes/
-    ├── login-human/     # Worktree A
-    └── login-test/      # Worktree B
+├── main_repo/           # Main .git repository
+├── workspaces/          # Active nodes
+│   ├── login-human/     # Worktree A
+│   └── login-test/      # Worktree B
+└── my_project.code-workspace # VSCode workspace config
 ```
 
 ## 📝 License

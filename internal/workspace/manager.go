@@ -12,14 +12,15 @@ import (
 	"devswarm/internal/git"
 	"devswarm/internal/tmux"
 	"devswarm/internal/types"
+	"devswarm/internal/vscode"
 )
 
 const (
-	RepoDir    = "repo"
-	NodesDir   = "nodes"
-	MetaDir    = ".devswarm"
-	StateFile  = "state.json"
-	ConfigFile = "config.yaml"
+	RepoDir       = "main_repo"  // Was "repo"
+	WorkspacesDir = "workspaces" // Was NodesDir
+	MetaDir       = ".devswarm"
+	StateFile     = "state.json"
+	ConfigFile    = "config.yaml"
 )
 
 // WorkspaceManager handles all high-level operations on the DevSwarm workspace.
@@ -65,13 +66,22 @@ func FindWorkspaceRoot(startPath string) (string, error) {
 	}
 }
 
+// SyncVSCodeWorkspace updates the .code-workspace file with current nodes
+func (wm *WorkspaceManager) SyncVSCodeWorkspace() error {
+	var nodes []string
+	for name := range wm.State.Nodes {
+		nodes = append(nodes, name)
+	}
+	return vscode.UpdateWorkspaceFile(wm.RootPath, RepoDir, WorkspacesDir, nodes)
+}
+
 // Init creates a new DevSwarm workspace structure.
 // It creates the directories but does NOT clone the repo (that's the caller's job via GitManager).
 func Init(rootPath, repoURL string) (*WorkspaceManager, error) {
 	// 1. Create directory structure
 	dirs := []string{
 		filepath.Join(rootPath, RepoDir),
-		filepath.Join(rootPath, NodesDir),
+		filepath.Join(rootPath, WorkspacesDir),
 		filepath.Join(rootPath, MetaDir),
 	}
 
@@ -163,7 +173,7 @@ func (wm *WorkspaceManager) SpawnNode(nodeName, logicalBranch, baseBranch, purpo
 	// 2. Define paths and branch names
 	// Shadow branch format: devswarm/<node_name>/<logical_branch>
 	shadowBranch := fmt.Sprintf("devswarm/%s/%s", nodeName, logicalBranch)
-	worktreePath := filepath.Join(wm.RootPath, NodesDir, nodeName)
+	worktreePath := filepath.Join(wm.RootPath, WorkspacesDir, nodeName)
 
 	// 3. Create worktree + shadow branch
 	// This runs: git worktree add -b <shadow> <path> <logical>
@@ -188,6 +198,11 @@ func (wm *WorkspaceManager) SpawnNode(nodeName, logicalBranch, baseBranch, purpo
 	if err := wm.SaveState(); err != nil {
 		// Rollback? ideally yes, but for MVP let's just warn
 		return fmt.Errorf("node created but state save failed: %w", err)
+	}
+
+	// 6. Update VSCode Workspace
+	if err := wm.SyncVSCodeWorkspace(); err != nil {
+		fmt.Printf("Warning: Failed to update VSCode workspace file: %v\n", err)
 	}
 
 	return nil
@@ -249,7 +264,16 @@ func (wm *WorkspaceManager) RemoveNode(nodeName string) error {
 	delete(wm.State.Nodes, nodeName)
 
 	// 5. Persist State
-	return wm.SaveState()
+	if err := wm.SaveState(); err != nil {
+		return err
+	}
+
+	// 6. Update VSCode Workspace
+	if err := wm.SyncVSCodeWorkspace(); err != nil {
+		fmt.Printf("Warning: Failed to update VSCode workspace file: %v\n", err)
+	}
+
+	return nil
 }
 
 // MergeNode merges the node's shadow branch into its logical branch.
