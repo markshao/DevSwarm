@@ -3,7 +3,7 @@ package version
 var (
 	// Version is the current version of DevSwarm.
 	// This should be set via ldflags during build.
-	Version = "dev"
+	Version = "v0.0.3"
 
 	// Commit is the git commit hash of the build.
 	// This should be set via ldflags during build.
