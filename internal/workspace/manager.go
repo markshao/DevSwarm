@@ -282,11 +282,25 @@ func (wm *WorkspaceManager) FindNodeByPath(path string) (string, *types.Node, er
 		return "", nil, err
 	}
 
+	// Resolve symlinks to handle case sensitivity on macOS properly
+	// e.g. /Users/foo/Desktop vs /Users/foo/desktop
+	canonicalPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		// If path doesn't exist, we can't eval symlinks, fall back to absPath
+		canonicalPath = absPath
+	}
+
 	// Check if path is inside any node's worktree
 	for name, node := range wm.State.Nodes {
+		// Also resolve node worktree path to canonical form
+		nodePath, err := filepath.EvalSymlinks(node.WorktreePath)
+		if err != nil {
+			nodePath = node.WorktreePath
+		}
+
 		// We use simple string prefix check, but to be safe we should check directory boundary
 		// e.g. /foo/bar matches /foo/bar/baz but not /foo/bar-baz
-		rel, err := filepath.Rel(node.WorktreePath, absPath)
+		rel, err := filepath.Rel(nodePath, canonicalPath)
 		if err == nil && !filepath.IsAbs(rel) && rel != ".." && !filepath.HasPrefix(rel, "../") {
 			return name, &node, nil
 		}
