@@ -23,9 +23,23 @@ If no, attaches to a default tmux session named 'default'.`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		targetPath := ""
+
+		// Priority 1: Command line argument
 		if len(args) > 0 {
 			targetPath = args[0]
-		} else {
+			log.Info("auto-attach: using targetPath from args: %s", targetPath)
+		}
+
+		// Priority 2: Environment variable CURRENT_FILE (from VS Code / Trae)
+		if targetPath == "" {
+			targetPath = os.Getenv("CURRENT_FILE")
+			if targetPath != "" {
+				log.Info("auto-attach: using targetPath from CURRENT_FILE env: %s", targetPath)
+			}
+		}
+
+		// Priority 3: Current working directory
+		if targetPath == "" {
 			var err error
 			targetPath, err = os.Getwd()
 			if err != nil {
@@ -34,6 +48,7 @@ If no, attaches to a default tmux session named 'default'.`,
 				fallbackToDefaultSession()
 				return
 			}
+			log.Info("auto-attach: using targetPath from CWD: %s", targetPath)
 		}
 
 		// Ensure targetPath is absolute to handle relative paths correctly
