@@ -47,6 +47,22 @@ func NewManager(rootPath string) (*WorkspaceManager, error) {
 	return wm, nil
 }
 
+// FindWorkspaceRoot traverses up from startPath looking for .devswarm directory.
+func FindWorkspaceRoot(startPath string) (string, error) {
+	current := startPath
+	for {
+		if _, err := os.Stat(filepath.Join(current, MetaDir)); err == nil {
+			return current, nil
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", fmt.Errorf("not a devswarm workspace (or any of the parent directories): %s not found", MetaDir)
+		}
+		current = parent
+	}
+}
+
 // Init creates a new DevSwarm workspace structure.
 // It creates the directories but does NOT clone the repo (that's the caller's job via GitManager).
 func Init(rootPath, repoURL string) (*WorkspaceManager, error) {
@@ -256,4 +272,25 @@ func (wm *WorkspaceManager) MergeNode(nodeName string, cleanup bool) error {
 	}
 
 	return nil
+}
+
+// FindNodeByPath finds which node (if any) contains the given file path.
+// It returns the node name and the node object.
+func (wm *WorkspaceManager) FindNodeByPath(path string) (string, *types.Node, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// Check if path is inside any node's worktree
+	for name, node := range wm.State.Nodes {
+		// We use simple string prefix check, but to be safe we should check directory boundary
+		// e.g. /foo/bar matches /foo/bar/baz but not /foo/bar-baz
+		rel, err := filepath.Rel(node.WorktreePath, absPath)
+		if err == nil && !filepath.IsAbs(rel) && rel != ".." && !filepath.HasPrefix(rel, "../") {
+			return name, &node, nil
+		}
+	}
+
+	return "", nil, nil
 }

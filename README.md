@@ -121,6 +121,33 @@ Manually remove a node and release all resources (Worktree, Branch, Session).
 devswarm rm login-test
 ```
 
+## 💻 IDE Integration (VS Code / Trae)
+
+DevSwarm can automatically attach your IDE terminal to the correct Node's Tmux session based on the file you are currently editing.
+
+### Setup Instructions
+
+1.  Open your VS Code `settings.json`.
+2.  Add or replace the following configuration:
+
+```json
+  "terminal.integrated.profiles.osx": {
+    "devswarm-tmux": {
+      "path": "/usr/local/bin/devswarm",
+      "args": ["auto-attach", "${file}"],
+      "icon": "terminal-tmux",
+      "cwd": "${fileDirname}"
+    }
+  },
+  "terminal.integrated.defaultProfile.osx": "devswarm-tmux"
+```
+
+### How it works
+
+- When you open a terminal (`Ctrl + ~`), DevSwarm detects if the active file belongs to a specific **Node**.
+- If it does, you are automatically attached to that node's **Tmux session**.
+- If not, you are attached to a **default** session.
+
 ## 🏗 Architecture
 
 - **Repo**: The single source of truth (Git repository).

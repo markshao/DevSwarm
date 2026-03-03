@@ -1,0 +1,22 @@
+{
+  "repo_url": "git@code.byted.org:ad/apollo8.git",
+  "repo_path": "/Users/bytedance/workspace/DevSwarm/playground/apollo8_workspace/repo",
+  "nodes": {
+    "feature_yuliang": {
+      "name": "feature_yuliang",
+      "logical_branch": "feature/yuliang",
+      "shadow_branch": "devswarm/feature_yuliang/feature/yuliang",
+      "worktree_path": "/Users/bytedance/workspace/DevSwarm/playground/apollo8_workspace/nodes/feature_yuliang",
+      "purpose": "code_dev",
+      "created_at": "2026-03-03T11:04:05.724414+08:00"
+    },
+    "feature_yuliang2": {
+      "name": "feature_yuliang2",
+      "logical_branch": "feature/yuliang",
+      "shadow_branch": "devswarm/feature_yuliang2/feature/yuliang",
+      "worktree_path": "/Users/bytedance/workspace/DevSwarm/playground/apollo8_workspace/nodes/feature_yuliang2",
+      "purpose": "code_dev",
+      "created_at": "2026-03-03T11:06:10.241158+08:00"
+    }
+  }
+}
