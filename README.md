@@ -179,4 +179,4 @@ my_project_swarm/
 
 ## 📝 License
 
-MIT
+Apache-2.0 LICENSE
