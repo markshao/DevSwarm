@@ -5,12 +5,9 @@ import (
 	"os"
 
 	"devswarm/internal/log"
-	"devswarm/internal/version"
 
 	"github.com/spf13/cobra"
 )
-
-var versionFlag bool
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -28,18 +25,7 @@ enabling concurrent development nodes for human and AI collaboration.`,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		log.Close()
 	},
-	Run: func(cmd *cobra.Command, args []string) {
-		if versionFlag {
-			fmt.Printf("DevSwarm version %s\n", version.Version)
-			fmt.Printf("Commit: %s\n", version.Commit)
-			fmt.Printf("Date: %s\n", version.Date)
-			return
-		}
-		fmt.Println("Hello DevSwarm! 🐝")
-		fmt.Println("Ready to spawn some nodes.")
-		// Print help if no args provided
-		cmd.Help()
-	},
+	// Run is omitted to rely on Cobra's default help behavior
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -47,8 +33,6 @@ enabling concurrent development nodes for human and AI collaboration.`,
 func Execute() {
 	// Hide the completion command from help
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
-
-	rootCmd.Flags().BoolVarP(&versionFlag, "version", "v", false, "Print version information")
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
