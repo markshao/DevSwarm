@@ -64,10 +64,23 @@ fi
 echo "📦 Extracting..."
 tar -xzf "$TMP_DIR/$ASSET_NAME" -C "$TMP_DIR"
 
+# Rename to BINARY_NAME if needed (Goreleaser might extract as 'ds')
+if [ -f "$TMP_DIR/ds" ]; then
+    mv "$TMP_DIR/ds" "$TMP_DIR/$BINARY_NAME"
+fi
+
 # 3. Install binary
 echo "🚀 Installing to $INSTALL_DIR..."
-mv "$TMP_DIR/ds" "$INSTALL_DIR/ds"
-chmod +x "$INSTALL_DIR/ds"
+if [ -w "$INSTALL_DIR" ]; then
+    mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
+    chmod +x "$INSTALL_DIR/$BINARY_NAME"
+else
+    echo "  (Needs sudo permission to move binary)"
+    # Use /dev/tty to force interactive password entry even when running via pipe
+    sudo -v < /dev/tty
+    sudo mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
+    sudo chmod +x "$INSTALL_DIR/$BINARY_NAME"
+fi
 
 # 4. Setup Autocomplete
 SHELL_TYPE=$(basename "$SHELL")
