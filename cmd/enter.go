@@ -23,24 +23,8 @@ Features:
 
 If you are already inside tmux, it will switch the current client.
 If not, it will start a new client.`,
-	Args: cobra.RangeArgs(0, 1),
-	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
-
-		wm, err := workspace.NewManager(cwd)
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
-
-		var nodeNames []string
-		for name := range wm.State.Nodes {
-			nodeNames = append(nodeNames, name)
-		}
-		return nodeNames, cobra.ShellCompDirectiveNoFileComp
-	},
+	Args:              cobra.RangeArgs(0, 1),
+	ValidArgsFunction: CompleteNodeNames,
 	Run: func(cmd *cobra.Command, args []string) {
 		cwd, err := os.Getwd()
 		if err != nil {

@@ -17,7 +17,8 @@ var rmCmd = &cobra.Command{
 - Removes the git worktree
 - Deletes the shadow branch
 - Updates the state file`,
-	Args: cobra.ExactArgs(1),
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: CompleteNodeNames,
 	Run: func(cmd *cobra.Command, args []string) {
 		nodeName := args[0]
 

@@ -106,4 +106,6 @@ else
     echo "  You can manually add: source <(ds completion $SHELL_TYPE)"
 fi
 
-echo -e "${GREEN}✨ DevSwarm installed successfully! Run 'ds help' to get started.${NC}"
+echo -e "${GREEN}✨ DevSwarm installed successfully!${NC}"
+echo -e "${GREEN}👉 Please restart your terminal or run 'source ~/.zshrc' (or ~/.bashrc) to enable autocompletion.${NC}"
+echo -e "Run 'ds help' to get started."

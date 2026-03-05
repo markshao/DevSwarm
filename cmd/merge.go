@@ -18,7 +18,8 @@ var mergeCmd = &cobra.Command{
 This operation is performed in the main repository.
 
 If --cleanup is specified, the node will be removed after a successful merge.`,
-	Args: cobra.ExactArgs(1),
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: CompleteNodeNames,
 	Run: func(cmd *cobra.Command, args []string) {
 		nodeName := args[0]
 
