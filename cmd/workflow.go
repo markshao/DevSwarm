@@ -35,14 +35,29 @@ var runWorkflowCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		wm, err := workspace.NewManager(cwd)
+		// Find workspace root
+		rootPath, err := workspace.FindWorkspaceRoot(cwd)
+		if err != nil {
+			color.Red("Not in a DevSwarm workspace: %v", err)
+			os.Exit(1)
+		}
+
+		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
 			color.Red("Failed to load workspace: %v", err)
 			os.Exit(1)
 		}
 
+		// Detect if we are inside a node to use its branch as context
+		var baseBranch string
+		nodeName, node, err := wm.FindNodeByPath(cwd)
+		if err == nil && nodeName != "" {
+			fmt.Printf("Detected node context: %s\n", nodeName)
+			baseBranch = node.ShadowBranch
+		}
+
 		engine := workflow.NewEngine(wm)
-		run, err := engine.StartRun(wfName, "manual") // TODO: Support passing trigger type
+		run, err := engine.StartRun(wfName, "manual", baseBranch)
 		if err != nil {
 			color.Red("Failed to start workflow: %v", err)
 			os.Exit(1)
@@ -63,7 +78,14 @@ var lsWorkflowCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		wm, err := workspace.NewManager(cwd)
+		// Find workspace root
+		rootPath, err := workspace.FindWorkspaceRoot(cwd)
+		if err != nil {
+			color.Red("Not in a DevSwarm workspace: %v", err)
+			os.Exit(1)
+		}
+
+		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
 			color.Red("Failed to load workspace: %v", err)
 			os.Exit(1)
@@ -125,7 +147,14 @@ var inspectWorkflowCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		wm, err := workspace.NewManager(cwd)
+		// Find workspace root
+		rootPath, err := workspace.FindWorkspaceRoot(cwd)
+		if err != nil {
+			color.Red("Not in a DevSwarm workspace: %v", err)
+			os.Exit(1)
+		}
+
+		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
 			color.Red("Failed to load workspace: %v", err)
 			os.Exit(1)
@@ -172,6 +201,18 @@ var inspectWorkflowCmd = &cobra.Command{
 			)
 		}
 		w.Flush()
+
+		// Print errors if any
+		hasErrors := false
+		for _, step := range run.Steps {
+			if step.Error != "" {
+				if !hasErrors {
+					fmt.Println("\nErrors:")
+					hasErrors = true
+				}
+				fmt.Printf("- Step %s: %s\n", step.ID, color.RedString(step.Error))
+			}
+		}
 	},
 }
 

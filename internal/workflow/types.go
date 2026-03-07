@@ -19,6 +19,7 @@ type Run struct {
 	ID        string       `json:"id"`
 	Workflow  string       `json:"workflow"`
 	Trigger   string       `json:"trigger"` // e.g. "commit", "manual"
+	BaseBranch string      `json:"base_branch"`
 	Status    RunStatus    `json:"status"`
 	StartTime time.Time    `json:"start_time"`
 	EndTime   time.Time    `json:"end_time,omitempty"`
@@ -32,6 +33,7 @@ type StepStatus struct {
 	StartTime time.Time `json:"start_time,omitempty"`
 	EndTime   time.Time `json:"end_time,omitempty"`
 	NodeName  string    `json:"node_name,omitempty"`
+	ShadowBranch string `json:"shadow_branch,omitempty"`
 	LogPath   string    `json:"log_path,omitempty"`
 	Error     string    `json:"error,omitempty"`
 }

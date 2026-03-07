@@ -113,6 +113,18 @@ func VerifyBranch(repoPath, branch string) error {
 	return nil
 }
 
+// GetCurrentBranch returns the name of the current branch in the given repo path.
+func GetCurrentBranch(repoPath string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current branch: %w", err)
+	}
+	// Trim newline
+	return string(output[:len(output)-1]), nil
+}
+
 // CreateBranch creates a new branch from a base point.
 func CreateBranch(repoPath, branchName, basePoint string) error {
 	cmd := exec.Command("git", "branch", branchName, basePoint)

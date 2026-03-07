@@ -23,6 +23,15 @@ func NewSession(sessionName, cwd string) error {
 	return nil
 }
 
+// SendKeys sends keys to a tmux session.
+func SendKeys(sessionName, keys string) error {
+	cmd := exec.Command("tmux", "send-keys", "-t", sessionName, keys, "C-m")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to send keys to session %s: %s: %w", sessionName, string(output), err)
+	}
+	return nil
+}
+
 // AttachSession replaces the current process with tmux attach.
 // WARNING: This function does not return if successful!
 func AttachSession(sessionName string) error {
