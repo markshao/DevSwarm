@@ -101,7 +101,7 @@ func (e *Engine) executePipeline(run *Run, wf *types.Workflow) {
 
 		// Create Node and Execute Agent
 		err := e.executeStep(run, step, &stepDef)
-		
+
 		step.EndTime = time.Now()
 		if err != nil {
 			step.Status = StatusFailed
@@ -187,11 +187,18 @@ func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.Pipeline
 	// Since user wants "executor: tmux", we should try to use tmux if possible.
 	// But getting exit code from detached tmux is hard.
 	// Strategy: Run command via `tmux send-keys` and wait for a marker file.
-	
+
 	// Command to run inside tmux:
 	// "qwen -p agent_prompt.md -y; echo $? > .agent_exit_code"
 	agentCmd := fmt.Sprintf("%s -p agent_prompt.md -y", agent.Runtime.CodeAgent)
-	fullCmd := fmt.Sprintf("%s; echo $? > .agent_exit_code", agentCmd)
+
+	// Force non-interactive mode by piping '1' (or whatever default) if it prompts
+	// And ensure we exit the shell if it drops to one? No, we are in tmux.
+	// We use 'yes' to feed 'y' or '1' if qwen still prompts.
+	// But 'yes' is infinite loop if not consumed.
+	// Better: use heredoc or pipe echo.
+	// Assuming '1' selects "Generate actual unit tests".
+	fullCmd := fmt.Sprintf("echo '1' | %s; echo $? > .agent_exit_code", agentCmd)
 
 	// We use the existing session created by spawnAgentNode
 	sessionName := fmt.Sprintf("devswarm-%s", step.NodeName)
@@ -263,7 +270,7 @@ func (e *Engine) spawnAgentNode(nodeName, shadowBranch, baseBranch string) (*typ
 		TmuxSession:   sessionName,
 		CreatedAt:     time.Now(),
 	}
-	
+
 	if e.wm.State.Nodes == nil {
 		e.wm.State.Nodes = make(map[string]types.Node)
 	}
@@ -369,7 +376,7 @@ func (e *Engine) ListRuns() ([]Run, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		
+
 		statusPath := filepath.Join(runsDir, entry.Name(), "status.json")
 		data, err := os.ReadFile(statusPath)
 		if err != nil {

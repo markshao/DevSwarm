@@ -214,6 +214,11 @@ env:
 You are an expert software engineer.
 Your task is to generate unit tests for the changed code.
 
+IMPORTANT:
+- Do not ask for confirmation.
+- Directly generate the code.
+- Output the code block.
+
 Context:
 - Branch: {{.Branch}}
 - Diff: {{.Diff}}
@@ -227,6 +232,10 @@ Context:
 
 You are a senior code reviewer.
 Your task is to review the code changes and provide constructive feedback.
+
+IMPORTANT:
+- Do not ask for confirmation.
+- Directly output your review.
 
 Context:
 - Branch: {{.Branch}}
