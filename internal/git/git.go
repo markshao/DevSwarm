@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -43,6 +44,27 @@ func Clone(repoURL, destPath string) error {
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("git clone failed: %w", err)
+	}
+	return nil
+}
+
+// GetConfig reads a git configuration value from the given repo path.
+func GetConfig(repoPath, key string) (string, error) {
+	cmd := exec.Command("git", "config", key)
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get git config %s: %w", key, err)
+	}
+	return string(bytes.TrimSpace(output)), nil
+}
+
+// SetConfig sets a git configuration value in the given repo path (local config).
+func SetConfig(repoPath, key, value string) error {
+	cmd := exec.Command("git", "config", key, value)
+	cmd.Dir = repoPath
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to set git config %s: %w", key, err)
 	}
 	return nil
 }

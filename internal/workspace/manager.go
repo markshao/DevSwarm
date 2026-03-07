@@ -13,6 +13,8 @@ import (
 	"devswarm/internal/tmux"
 	"devswarm/internal/types"
 	"devswarm/internal/vscode"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -129,6 +131,21 @@ func Init(rootPath, repoURL string) (*WorkspaceManager, error) {
 	return wm, nil
 }
 
+// GetConfig loads the .devswarm/config.yaml
+func (wm *WorkspaceManager) GetConfig() (*types.Config, error) {
+	configPath := filepath.Join(wm.RootPath, MetaDir, ConfigFile)
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+	var config types.Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+// generateV1Configs generates default V1 configuration files
 func (wm *WorkspaceManager) generateV1Configs() error {
 	// 1. config.yaml
 	configContent := `version: 1

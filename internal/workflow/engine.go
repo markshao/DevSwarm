@@ -138,7 +138,18 @@ func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.Pipeline
 		return fmt.Errorf("failed to spawn node: %w", err)
 	}
 
-	// 4. Load Agent Configuration
+	// 4. Setup Git Identity for the Node
+	config, err := e.wm.GetConfig()
+	if err == nil {
+		if config.Git.User != "" {
+			_ = git.SetConfig(node.WorktreePath, "user.name", config.Git.User)
+		}
+		if config.Git.Email != "" {
+			_ = git.SetConfig(node.WorktreePath, "user.email", config.Git.Email)
+		}
+	}
+
+	// 5. Load Agent Configuration
 	agentPath := filepath.Join(e.wm.RootPath, workspace.MetaDir, workspace.AgentsDir, stepDef.Agent+".yaml")
 	agentData, err := os.ReadFile(agentPath)
 	if err != nil {
@@ -149,7 +160,7 @@ func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.Pipeline
 		return fmt.Errorf("failed to parse agent config: %w", err)
 	}
 
-	// 5. Load and Render Prompt
+	// 6. Load and Render Prompt
 	promptPath := filepath.Join(e.wm.RootPath, workspace.MetaDir, workspace.PromptsDir, agent.Prompt)
 	promptContent, err := os.ReadFile(promptPath)
 	if err != nil {
@@ -179,7 +190,7 @@ func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.Pipeline
 		return fmt.Errorf("failed to write prompt file: %w", err)
 	}
 
-	// 6. Execute Agent Command
+	// 7. Execute Agent Command
 	// Construct command: qwen -p <prompt_file> -y
 	// We run this using os/exec in the worktree directory.
 	// If agent runtime is tmux, we could wrap it, but for simplicity/reliability in v1,
@@ -215,7 +226,7 @@ func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.Pipeline
 		return fmt.Errorf("agent failed with exit code %d", exitCode)
 	}
 
-	// 7. Commit Changes
+	// 8. Commit Changes
 	// The agent modified files in the worktree. We commit them to the shadow branch.
 	if err := e.commitChanges(node.WorktreePath, fmt.Sprintf("Agent %s Result", step.ID)); err != nil {
 		return fmt.Errorf("failed to commit agent changes: %w", err)

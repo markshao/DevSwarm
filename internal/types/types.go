@@ -36,6 +36,8 @@ type Config struct {
 
 type GitConfig struct {
 	MainBranch string `yaml:"main_branch"`
+	User       string `yaml:"user,omitempty"`
+	Email      string `yaml:"email,omitempty"`
 }
 
 type RuntimeConfig struct {

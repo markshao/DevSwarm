@@ -59,12 +59,36 @@ Clones the repository into a 'repo' subdirectory and sets up configuration.`,
 			os.Exit(1)
 		}
 
-		// 4. Create initial VSCode workspace file
+		// 4. Update Git Identity in config.yaml (V1 Feature)
+		userName, _ := git.GetConfig(wm.State.RepoPath, "user.name")
+		userEmail, _ := git.GetConfig(wm.State.RepoPath, "user.email")
+
+		if userName != "" || userEmail != "" {
+			fmt.Printf("Detected git identity: %s <%s>\n", userName, userEmail)
+			// Read current config
+			configPath := filepath.Join(wm.RootPath, workspace.MetaDir, workspace.ConfigFile)
+			configData, err := os.ReadFile(configPath)
+			if err == nil {
+				// Simple string replacement to inject user/email (avoiding full yaml parsing for simplicity in init)
+				// Or better, use workspace manager method if available.
+				// Since we just generated it, we know the format.
+				newContent := string(configData)
+				if userName != "" {
+					newContent = newContent + fmt.Sprintf("  user: %s\n", userName)
+				}
+				if userEmail != "" {
+					newContent = newContent + fmt.Sprintf("  email: %s\n", userEmail)
+				}
+				os.WriteFile(configPath, []byte(newContent), 0644)
+			}
+		}
+
+		// 6. Create initial VSCode workspace file
 		if err := wm.SyncVSCodeWorkspace(); err != nil {
 			fmt.Printf("Warning: Failed to create VSCode workspace file: %v\n", err)
 		}
 
-		// 5. Install Git Hooks (V1 Feature)
+		// 7. Install Git Hooks (V1 Feature)
 		fmt.Println("Installing Git hooks...")
 		if err := git.InstallPostCommitHook(wm.State.RepoPath); err != nil {
 			fmt.Printf("Warning: Failed to install post-commit hook: %v\n", err)
