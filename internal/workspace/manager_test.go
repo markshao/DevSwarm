@@ -127,15 +127,15 @@ func TestInitGeneratesV1Configs(t *testing.T) {
 	wm, cleanup := setupTestWorkspace(t)
 	defer cleanup()
 
-	// 1. ut-agent.yaml should use trae-agent as the code agent runtime
+	// 1. ut-agent.yaml should use qwen as the code agent runtime
 	utAgentPath := filepath.Join(wm.RootPath, MetaDir, AgentsDir, "ut-agent.yaml")
 	data, err := os.ReadFile(utAgentPath)
 	if err != nil {
 		t.Fatalf("failed to read ut-agent.yaml: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "code-agent: trae-agent") {
-		t.Errorf("ut-agent.yaml does not configure trae-agent runtime; content: %s", content)
+	if !strings.Contains(content, "code-agent: qwen") {
+		t.Errorf("ut-agent.yaml does not configure qwen runtime; content: %s", content)
 	}
 
 	// 2. prompts/ut.md should contain the updated unit test generation instructions
