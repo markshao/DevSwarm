@@ -78,8 +78,11 @@ func FindWorkspaceRoot(startPath string) (string, error) {
 // SyncVSCodeWorkspace updates the .code-workspace file with current nodes
 func (wm *WorkspaceManager) SyncVSCodeWorkspace() error {
 	var nodes []string
-	for name := range wm.State.Nodes {
-		nodes = append(nodes, name)
+	for name, node := range wm.State.Nodes {
+		// Only include user-created nodes
+		if node.CreatedBy == "user" {
+			nodes = append(nodes, name)
+		}
 	}
 	return vscode.UpdateWorkspaceFile(wm.RootPath, RepoDir, WorkspacesDir, nodes)
 }

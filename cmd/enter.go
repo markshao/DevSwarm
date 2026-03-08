@@ -41,13 +41,18 @@ If not, it will start a new client.`,
 		if len(args) == 0 {
 			// Interactive mode
 			var err error
-			nodeName, err = SelectNode(wm, "enter")
+			nodeName, err = SelectNode(wm, "enter", true)
 			if err != nil {
 				color.Yellow("%v", err)
 				return
 			}
 		} else {
 			nodeName = args[0]
+			// Check if it is an agent node
+			if node, exists := wm.State.Nodes[nodeName]; exists && node.CreatedBy != "user" {
+				color.Red("Node '%s' is an Agent Node. Please use `ds workflow enter` to access it.", nodeName)
+				os.Exit(1)
+			}
 		}
 
 		fmt.Printf("Entering node '%s'...\n", nodeName)

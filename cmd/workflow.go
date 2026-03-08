@@ -163,7 +163,7 @@ func getTriggerDisplay(run workflow.Run) string {
 var inspectWorkflowCmd = &cobra.Command{
 	Use:   "inspect [run_id]",
 	Short: "Inspect a specific workflow run",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		// Only autocomplete the first argument (run_id)
 		if len(args) > 0 {
@@ -198,8 +198,6 @@ var inspectWorkflowCmd = &cobra.Command{
 		return completions, cobra.ShellCompDirectiveNoFileComp
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		runID := args[0]
-
 		cwd, err := os.Getwd()
 		if err != nil {
 			color.Red("Error getting current directory: %v", err)
@@ -217,6 +215,22 @@ var inspectWorkflowCmd = &cobra.Command{
 		if err != nil {
 			color.Red("Failed to load workspace: %v", err)
 			os.Exit(1)
+		}
+
+		var runID string
+		if len(args) > 0 {
+			runID = args[0]
+		} else {
+			var err error
+			runID, err = SelectWorkflowRun(wm)
+			if err != nil {
+				// Don't exit with error if cancelled, just return
+				if err.Error() == "^C" {
+					return
+				}
+				fmt.Printf("%v\n", err)
+				return
+			}
 		}
 
 		engine := workflow.NewEngine(wm)
@@ -273,6 +287,137 @@ var inspectWorkflowCmd = &cobra.Command{
 	},
 }
 
+var enterWorkflowCmd = &cobra.Command{
+	Use:   "enter [run_id] [step_id]",
+	Short: "Enter an agent node within a workflow run",
+	Args:  cobra.MaximumNArgs(2),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// Only autocomplete run_id for now
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		rootPath, err := workspace.FindWorkspaceRoot(cwd)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		wm, err := workspace.NewManager(rootPath)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		engine := workflow.NewEngine(wm)
+		runs, err := engine.ListRuns()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		var completions []string
+		for _, run := range runs {
+			desc := fmt.Sprintf("%s - %s (%s)", run.Workflow, run.Status, run.StartTime.Format("01-02 15:04"))
+			completions = append(completions, fmt.Sprintf("%s\t%s", run.ID, desc))
+		}
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			color.Red("Error getting current directory: %v", err)
+			os.Exit(1)
+		}
+
+		rootPath, err := workspace.FindWorkspaceRoot(cwd)
+		if err != nil {
+			color.Red("Not in a DevSwarm workspace: %v", err)
+			os.Exit(1)
+		}
+
+		wm, err := workspace.NewManager(rootPath)
+		if err != nil {
+			color.Red("Failed to load workspace: %v", err)
+			os.Exit(1)
+		}
+
+		var runID string
+		if len(args) > 0 {
+			runID = args[0]
+		} else {
+			var err error
+			runID, err = SelectWorkflowRun(wm)
+			if err != nil {
+				if err.Error() == "^C" {
+					return
+				}
+				color.Red("%v", err)
+				return
+			}
+		}
+
+		engine := workflow.NewEngine(wm)
+		run, err := engine.GetRun(runID)
+		if err != nil {
+			color.Red("Run '%s' not found.", runID)
+			os.Exit(1)
+		}
+
+		var stepID string
+		if len(args) > 1 {
+			stepID = args[1]
+		} else {
+			// Check available steps
+			var validSteps []workflow.StepStatus
+			for _, s := range run.Steps {
+				if s.NodeName != "" {
+					validSteps = append(validSteps, s)
+				}
+			}
+
+			if len(validSteps) == 0 {
+				color.Red("No agent nodes found for run %s", runID)
+				return
+			}
+
+			if len(validSteps) == 1 {
+				stepID = validSteps[0].ID
+			} else {
+				var err error
+				stepID, err = SelectWorkflowStep(run)
+				if err != nil {
+					if err.Error() == "^C" {
+						return
+					}
+					color.Red("%v", err)
+					return
+				}
+			}
+		}
+
+		// Find Node Name
+		var nodeName string
+		for _, s := range run.Steps {
+			if s.ID == stepID {
+				nodeName = s.NodeName
+				break
+			}
+		}
+
+		if nodeName == "" {
+			color.Red("Step %s not found or has no node", stepID)
+			return
+		}
+
+		fmt.Printf("Entering agent node '%s' (Run: %s, Step: %s)...\n", nodeName, runID, stepID)
+		if err := wm.EnterNode(nodeName); err != nil {
+			color.Red("Failed to enter node: %v", err)
+			os.Exit(1)
+		}
+	},
+}
+
 func init() {
 	runWorkflowCmd.Flags().StringP("trigger", "t", "manual", "Trigger type (e.g. manual, commit)")
 
@@ -280,4 +425,5 @@ func init() {
 	workflowCmd.AddCommand(runWorkflowCmd)
 	workflowCmd.AddCommand(lsWorkflowCmd)
 	workflowCmd.AddCommand(inspectWorkflowCmd)
+	workflowCmd.AddCommand(enterWorkflowCmd)
 }

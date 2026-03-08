@@ -37,7 +37,7 @@ var rmCmd = &cobra.Command{
 		var nodeName string
 		if len(args) == 0 {
 			var err error
-			nodeName, err = SelectNode(wm, "remove")
+			nodeName, err = SelectNode(wm, "remove", true)
 			if err != nil {
 				fmt.Printf("%v\n", err)
 				return

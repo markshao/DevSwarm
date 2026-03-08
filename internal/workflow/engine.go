@@ -227,15 +227,21 @@ func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.Pipeline
 
 	// 7. Execute Agent Command
 	// Create a script to run the agent. This avoids long command echo in tmux and handles input piping.
-	// We use Heredoc to safely pass the prompt content.
+	// We read the prompt from the file (which contains the rendered content) instead of embedding it.
 	scriptContent := fmt.Sprintf(`#!/bin/sh
-PROMPT=$(cat <<'END_OF_PROMPT'
-%s
-END_OF_PROMPT
-)
+# Read prompt from file to avoid shell escaping issues
+if [ -f "agent_prompt.md" ]; then
+    PROMPT=$(cat agent_prompt.md)
+else
+    echo "Error: agent_prompt.md not found" >&2
+    exit 1
+fi
+
 echo '1' | %s "$PROMPT" -py
-echo $? > .agent_exit_code
-`, string(promptContent), agent.Runtime.CodeAgent)
+EXIT_CODE=$?
+echo $EXIT_CODE > .agent_exit_code
+exit $EXIT_CODE
+`, agent.Runtime.CodeAgent)
 
 	scriptPath := filepath.Join(node.WorktreePath, "run_agent.sh")
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
@@ -290,7 +296,12 @@ func (e *Engine) resolveBaseBranch(run *Run, stepDef *types.PipelineStep) (strin
 }
 
 func (e *Engine) spawnAgentNode(nodeName, shadowBranch, baseBranch, createdBy string) (*types.Node, error) {
-	worktreePath := filepath.Join(e.wm.RootPath, workspace.WorkspacesDir, nodeName)
+	// Agent nodes are stored in .devswarm/agent-nodes/ to keep them hidden from the main workspace list
+	agentNodesDir := filepath.Join(e.wm.RootPath, workspace.MetaDir, "agent-nodes")
+	if err := os.MkdirAll(agentNodesDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create agent nodes directory: %w", err)
+	}
+	worktreePath := filepath.Join(agentNodesDir, nodeName)
 
 	// 1. Create Shadow Branch & Worktree
 	// We use git.AddWorktree directly.

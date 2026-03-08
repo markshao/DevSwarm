@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // InstallPostCommitHook installs a git hook to trigger DevSwarm workflow.
@@ -55,7 +56,12 @@ func CommitWorktree(worktreePath, message string) error {
 	cmd := exec.Command("git", "commit", "-m", message)
 	cmd.Dir = worktreePath
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git commit failed: %s: %w", string(output), err)
+		outStr := string(output)
+		// Check if it's just a clean working tree
+		if strings.Contains(outStr, "nothing to commit") || strings.Contains(outStr, "working tree clean") {
+			return nil
+		}
+		return fmt.Errorf("git commit failed: %s: %w", outStr, err)
 	}
 	return nil
 }
