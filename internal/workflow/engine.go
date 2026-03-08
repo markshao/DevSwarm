@@ -226,19 +226,21 @@ func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.Pipeline
 	}
 
 	// 7. Execute Agent Command
-	// Construct command: trae-agent "prompt" -py
-	// We use fmt.Sprintf("%q", ...) to safely quote the prompt content for the shell.
+	// Create a script to run the agent. This avoids long command echo in tmux and handles input piping.
+	// We use Heredoc to safely pass the prompt content.
+	scriptContent := fmt.Sprintf(`#!/bin/sh
+PROMPT=$(cat <<'END_OF_PROMPT'
+%s
+END_OF_PROMPT
+)
+echo '1' | %s "$PROMPT" -py
+echo $? > .agent_exit_code
+`, string(promptContent), agent.Runtime.CodeAgent)
 
-	quotedPrompt := fmt.Sprintf("%q", string(promptContent))
-	agentCmd := fmt.Sprintf("%s %s -py", agent.Runtime.CodeAgent, quotedPrompt)
-
-	// Force non-interactive mode by piping '1' (or whatever default) if it prompts
-	// And ensure we exit the shell if it drops to one? No, we are in tmux.
-	// We use 'yes' to feed 'y' or '1' if trae-agent still prompts.
-	// But 'yes' is infinite loop if not consumed.
-	// Better: use heredoc or pipe echo.
-	// Assuming '1' selects "Generate actual unit tests".
-	fullCmd := fmt.Sprintf("echo '1' | %s; echo $? > .agent_exit_code", agentCmd)
+	scriptPath := filepath.Join(node.WorktreePath, "run_agent.sh")
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+		return fmt.Errorf("failed to write run script: %w", err)
+	}
 
 	// Ensure clean state: remove any existing exit code file
 	// This prevents race conditions if the file exists from a previous run or was checked out from git
@@ -246,7 +248,7 @@ func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.Pipeline
 
 	// We use the existing session created by spawnAgentNode
 	sessionName := fmt.Sprintf("devswarm-%s", step.NodeName)
-	if err := tmux.SendKeys(sessionName, fullCmd); err != nil {
+	if err := tmux.SendKeys(sessionName, "./run_agent.sh"); err != nil {
 		return fmt.Errorf("failed to send command to tmux: %w", err)
 	}
 
