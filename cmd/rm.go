@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 
+	"devswarm/internal/workflow"
 	"devswarm/internal/workspace"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -42,6 +44,41 @@ var rmCmd = &cobra.Command{
 			}
 		} else {
 			nodeName = args[0]
+		}
+
+		// Check for unapplied successful workflow runs
+		if node, exists := wm.State.Nodes[nodeName]; exists {
+			engine := workflow.NewEngine(wm)
+			runs, err := engine.ListRuns()
+			if err == nil {
+				var unapplied []string
+				for _, run := range runs {
+					if run.TriggeredByNode == nodeName && run.Status == workflow.StatusSuccess {
+						isApplied := false
+						for _, appliedID := range node.AppliedRuns {
+							if appliedID == run.ID {
+								isApplied = true
+								break
+							}
+						}
+						if !isApplied {
+							unapplied = append(unapplied, run.ID)
+						}
+					}
+				}
+
+				if len(unapplied) > 0 {
+					color.Yellow("Warning: Node '%s' has %d unapplied successful workflow runs.", nodeName, len(unapplied))
+					fmt.Printf("Unapplied runs: %v\n", unapplied)
+					fmt.Print("Are you sure you want to remove it? [y/N]: ")
+					var confirm string
+					fmt.Scanln(&confirm)
+					if confirm != "y" && confirm != "Y" {
+						fmt.Println("Aborted.")
+						return
+					}
+				}
+			}
 		}
 
 		fmt.Printf("Removing node '%s'...\n", nodeName)

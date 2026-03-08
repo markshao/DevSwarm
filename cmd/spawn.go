@@ -11,7 +11,7 @@ import (
 
 var (
 	baseBranch string
-	purpose    string
+	label      string
 	isShadow   bool
 )
 
@@ -70,7 +70,7 @@ If the branch_name does not exist, provide --base to create it from a base branc
 		}
 		fmt.Printf("Spawning node '%s' for branch '%s' (%s)...\n", nodeName, branchName, mode)
 
-		if err := wm.SpawnNode(nodeName, branchName, baseBranch, purpose, isShadow); err != nil {
+		if err := wm.SpawnNode(nodeName, branchName, baseBranch, label, isShadow); err != nil {
 			fmt.Printf("Failed to spawn node: %v\n", err)
 			os.Exit(1)
 		}
@@ -82,7 +82,7 @@ If the branch_name does not exist, provide --base to create it from a base branc
 
 func init() {
 	spawnCmd.Flags().StringVarP(&baseBranch, "base", "b", "", "Base branch to create the logical branch from if it doesn't exist")
-	spawnCmd.Flags().StringVarP(&purpose, "purpose", "p", "", "Purpose tag for this node (e.g. 'review', 'test')")
+	spawnCmd.Flags().StringVarP(&label, "label", "l", "", "Label for this node (e.g. 'review', 'test')")
 	spawnCmd.Flags().BoolVar(&isShadow, "shadow", false, "Create a shadow branch instead of using the logical branch directly")
 	rootCmd.AddCommand(spawnCmd)
 }

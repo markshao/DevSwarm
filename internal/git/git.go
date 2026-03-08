@@ -25,7 +25,7 @@ func InstallPostCommitHook(repoPath string) error {
 # DevSwarm Hook: Trigger workflow on commit
 
 echo "🐝 DevSwarm: Commit detected."
-ds workflow run default &
+ds workflow run default --trigger commit &
 `
 
 	// Write the hook file
@@ -33,6 +33,30 @@ ds workflow run default &
 		return fmt.Errorf("failed to write post-commit hook: %w", err)
 	}
 
+	return nil
+}
+
+// MergeWorktree merges sourceBranch into the current branch of the worktree.
+func MergeWorktree(worktreePath, sourceBranch string, squash bool) error {
+	args := []string{"merge", sourceBranch}
+	if squash {
+		args = append(args, "--squash")
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Dir = worktreePath
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git merge failed: %s: %w", string(output), err)
+	}
+	return nil
+}
+
+// CommitWorktree creates a commit in the worktree.
+func CommitWorktree(worktreePath, message string) error {
+	cmd := exec.Command("git", "commit", "-m", message)
+	cmd.Dir = worktreePath
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git commit failed: %s: %w", string(output), err)
+	}
 	return nil
 }
 
@@ -98,25 +122,23 @@ func DeleteBranch(repoPath, branch string) error {
 }
 
 // AddWorktree creates a new worktree.
-// If newBranch is different from startPoint, it creates a new branch (git worktree add -b <new> <path> <start>).
-// If newBranch is same as startPoint, it checks out the existing branch (git worktree add <path> <start>).
-func AddWorktree(repoPath, worktreePath, newBranch, startPoint string) error {
-	var cmd *exec.Cmd
-	if newBranch == startPoint {
-		// Existing branch mode: git worktree add <path> <branch>
-		cmd = exec.Command("git", "worktree", "add", worktreePath, startPoint)
-	} else {
-		// New branch mode: git worktree add -b <new_branch> <path> <start_point>
-		cmd = exec.Command("git", "worktree", "add", "-b", newBranch, worktreePath, startPoint)
-	}
+// It runs: git worktree add <path> <branch> -b <branch> (if new) or checkouts.
+// We simplify: git worktree add -b <shadowBranch> <path> <baseBranch>
+func AddWorktree(repoPath, worktreePath, shadowBranch, baseBranch string) error {
+	cmd := exec.Command("git", "worktree", "add", "-b", shadowBranch, worktreePath, baseBranch)
+	cmd.Dir = repoPath
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-	cmd.Dir = repoPath // Execute in the main repo directory
-	// cmd.Stdout = os.Stdout // Suppress stdout to avoid polluting CLI output if needed, or keep for debugging
-	// cmd.Stderr = os.Stderr
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("git worktree add failed: %s: %w", string(output), err)
+	if err := cmd.Run(); err != nil {
+		// If branch already exists, try without -b (checkout existing)
+		// Or maybe force?
+		// For now, let's assume we want to attach to existing if it fails.
+		cmd2 := exec.Command("git", "worktree", "add", worktreePath, shadowBranch)
+		cmd2.Dir = repoPath
+		if err2 := cmd2.Run(); err2 != nil {
+			return fmt.Errorf("git worktree add failed: %w (and retry failed: %v)", err, err2)
+		}
 	}
 	return nil
 }
@@ -131,16 +153,26 @@ func VerifyBranch(repoPath, branch string) error {
 	return nil
 }
 
-// GetCurrentBranch returns the name of the current branch in the given repo path.
+// GetCurrentBranch returns the current branch name of the repository.
 func GetCurrentBranch(repoPath string) (string, error) {
 	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
 	cmd.Dir = repoPath
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("failed to get current branch: %w", err)
+		return "", err
 	}
-	// Trim newline
-	return string(output[:len(output)-1]), nil
+	return string(bytes.TrimSpace(output)), nil
+}
+
+// GetLatestCommitHash returns the full SHA1 of the latest commit.
+func GetLatestCommitHash(repoPath string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(bytes.TrimSpace(output)), nil
 }
 
 // CreateBranch creates a new branch from a base point.

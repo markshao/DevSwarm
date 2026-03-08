@@ -11,7 +11,9 @@ type Node struct {
 	ShadowBranch  string    `json:"shadow_branch"`          // The actual branch for this node (e.g. devswarm/login-test/feature/login)
 	WorktreePath  string    `json:"worktree_path"`          // Absolute path to the worktree
 	TmuxSession   string    `json:"tmux_session,omitempty"` // Tmux session name, empty if not running
-	Purpose       string    `json:"purpose,omitempty"`      // User-defined tag (e.g. "review", "test-agent")
+	Label         string    `json:"label,omitempty"`        // User-defined tag (e.g. "review", "test")
+	CreatedBy     string    `json:"created_by,omitempty"`   // "user" for human, or <run-id> for workflow
+	AppliedRuns   []string  `json:"applied_runs,omitempty"` // List of workflow run IDs applied to this node
 	CreatedAt     time.Time `json:"created_at"`
 }
 

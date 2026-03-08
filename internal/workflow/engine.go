@@ -31,7 +31,7 @@ func NewEngine(wm *workspace.WorkspaceManager) *Engine {
 
 // StartRun initializes a new run and starts executing it.
 // Currently synchronous.
-func (e *Engine) StartRun(workflowName, trigger, baseBranch string) (*Run, error) {
+func (e *Engine) StartRun(workflowName, trigger, baseBranch, triggeredByNode string) (*Run, error) {
 	// 1. Load workflow definition
 	wfPath := filepath.Join(e.wm.RootPath, workspace.MetaDir, workspace.WorkflowsDir, workflowName+".yaml")
 	wfData, err := os.ReadFile(wfPath)
@@ -53,6 +53,16 @@ func (e *Engine) StartRun(workflowName, trigger, baseBranch string) (*Run, error
 		}
 	}
 
+	// Capture trigger data (e.g. commit hash) if triggered by commit
+	triggerData := ""
+	if trigger == "commit" {
+		// Get latest commit hash from main repo
+		hash, err := git.GetLatestCommitHash(e.wm.State.RepoPath)
+		if err == nil {
+			triggerData = hash[:7] // Short hash
+		}
+	}
+
 	// 3. Create Run structure
 	runID := fmt.Sprintf("run-%s-%s", time.Now().Format("20060102"), uuid.New().String()[:8])
 	runDir := filepath.Join(e.wm.RootPath, workspace.MetaDir, workspace.RunsDir, runID)
@@ -61,13 +71,15 @@ func (e *Engine) StartRun(workflowName, trigger, baseBranch string) (*Run, error
 	}
 
 	run := &Run{
-		ID:         runID,
-		Workflow:   workflowName,
-		Trigger:    trigger,
-		BaseBranch: baseBranch,
-		Status:     StatusRunning, // Mark as running immediately
-		StartTime:  time.Now(),
-		Steps:      make([]StepStatus, len(wf.Pipeline)),
+		ID:              runID,
+		Workflow:        workflowName,
+		Trigger:         trigger,
+		TriggerData:     triggerData,
+		BaseBranch:      baseBranch,
+		TriggeredByNode: triggeredByNode,
+		Status:          StatusRunning, // Mark as running immediately
+		StartTime:       time.Now(),
+		Steps:           make([]StepStatus, len(wf.Pipeline)),
 	}
 
 	for i, step := range wf.Pipeline {
@@ -133,21 +145,44 @@ func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.Pipeline
 	step.ShadowBranch = shadowBranch
 
 	// 3. Spawn Node (Worktree + Shadow Branch + Tmux)
-	node, err := e.spawnAgentNode(step.NodeName, shadowBranch, baseBranch)
+	node, err := e.spawnAgentNode(step.NodeName, shadowBranch, baseBranch, run.ID)
 	if err != nil {
 		return fmt.Errorf("failed to spawn node: %w", err)
 	}
 
 	// 4. Setup Git Identity for the Node
+	// Strategy:
+	// 1. Try to get identity from config.yaml
+	// 2. If missing, try to get from main repo (fallback)
+	// 3. Apply to node worktree
+
 	config, err := e.wm.GetConfig()
+	userName := ""
+	userEmail := ""
+
 	if err == nil {
-		if config.Git.User != "" {
-			_ = git.SetConfig(node.WorktreePath, "user.name", config.Git.User)
-		}
-		if config.Git.Email != "" {
-			_ = git.SetConfig(node.WorktreePath, "user.email", config.Git.Email)
-		}
+		userName = config.Git.User
+		userEmail = config.Git.Email
 	}
+
+	// Fallback to main repo config if missing
+	if userName == "" {
+		userName, _ = git.GetConfig(e.wm.State.RepoPath, "user.name")
+	}
+	if userEmail == "" {
+		userEmail, _ = git.GetConfig(e.wm.State.RepoPath, "user.email")
+	}
+
+	// Apply identity
+	if userName == "" {
+		userName = "ds_agent"
+	}
+	if userEmail == "" {
+		userEmail = "ds_agent@devswarm.local"
+	}
+
+	_ = git.SetConfig(node.WorktreePath, "user.name", userName)
+	_ = git.SetConfig(node.WorktreePath, "user.email", userEmail)
 
 	// 5. Load Agent Configuration
 	agentPath := filepath.Join(e.wm.RootPath, workspace.MetaDir, workspace.AgentsDir, stepDef.Agent+".yaml")
@@ -191,25 +226,23 @@ func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.Pipeline
 	}
 
 	// 7. Execute Agent Command
-	// Construct command: qwen -p <prompt_file> -y
-	// We run this using os/exec in the worktree directory.
-	// If agent runtime is tmux, we could wrap it, but for simplicity/reliability in v1,
-	// we run it as a subprocess attached to the created tmux session or just directly.
-	// Since user wants "executor: tmux", we should try to use tmux if possible.
-	// But getting exit code from detached tmux is hard.
-	// Strategy: Run command via `tmux send-keys` and wait for a marker file.
+	// Construct command: trae-agent "prompt" -py
+	// We use fmt.Sprintf("%q", ...) to safely quote the prompt content for the shell.
 
-	// Command to run inside tmux:
-	// "qwen -p agent_prompt.md -y; echo $? > .agent_exit_code"
-	agentCmd := fmt.Sprintf("%s -p agent_prompt.md -y", agent.Runtime.CodeAgent)
+	quotedPrompt := fmt.Sprintf("%q", string(promptContent))
+	agentCmd := fmt.Sprintf("%s %s -py", agent.Runtime.CodeAgent, quotedPrompt)
 
 	// Force non-interactive mode by piping '1' (or whatever default) if it prompts
 	// And ensure we exit the shell if it drops to one? No, we are in tmux.
-	// We use 'yes' to feed 'y' or '1' if qwen still prompts.
+	// We use 'yes' to feed 'y' or '1' if trae-agent still prompts.
 	// But 'yes' is infinite loop if not consumed.
 	// Better: use heredoc or pipe echo.
 	// Assuming '1' selects "Generate actual unit tests".
 	fullCmd := fmt.Sprintf("echo '1' | %s; echo $? > .agent_exit_code", agentCmd)
+
+	// Ensure clean state: remove any existing exit code file
+	// This prevents race conditions if the file exists from a previous run or was checked out from git
+	_ = os.Remove(filepath.Join(node.WorktreePath, ".agent_exit_code"))
 
 	// We use the existing session created by spawnAgentNode
 	sessionName := fmt.Sprintf("devswarm-%s", step.NodeName)
@@ -254,7 +287,7 @@ func (e *Engine) resolveBaseBranch(run *Run, stepDef *types.PipelineStep) (strin
 	return "", fmt.Errorf("dependency %s not found", depID)
 }
 
-func (e *Engine) spawnAgentNode(nodeName, shadowBranch, baseBranch string) (*types.Node, error) {
+func (e *Engine) spawnAgentNode(nodeName, shadowBranch, baseBranch, createdBy string) (*types.Node, error) {
 	worktreePath := filepath.Join(e.wm.RootPath, workspace.WorkspacesDir, nodeName)
 
 	// 1. Create Shadow Branch & Worktree
@@ -277,7 +310,8 @@ func (e *Engine) spawnAgentNode(nodeName, shadowBranch, baseBranch string) (*typ
 		LogicalBranch: baseBranch, // Logically related to base
 		ShadowBranch:  shadowBranch,
 		WorktreePath:  worktreePath,
-		Purpose:       "agent",
+		Label:         "agent",
+		CreatedBy:     createdBy,
 		TmuxSession:   sessionName,
 		CreatedAt:     time.Now(),
 	}
@@ -340,6 +374,10 @@ func (e *Engine) waitForAgent(worktreePath string) (int, error) {
 }
 
 func (e *Engine) commitChanges(worktreePath, msg string) error {
+	// Clean up transient files before committing
+	_ = os.Remove(filepath.Join(worktreePath, ".agent_exit_code"))
+	_ = os.Remove(filepath.Join(worktreePath, "agent_prompt.md"))
+
 	// git add .
 	addCmd := exec.Command("git", "add", ".")
 	addCmd.Dir = worktreePath
@@ -364,6 +402,11 @@ func (e *Engine) commitChanges(worktreePath, msg string) error {
 
 func (e *Engine) saveRunStatus(run *Run) error {
 	path := filepath.Join(e.wm.RootPath, workspace.MetaDir, workspace.RunsDir, run.ID, "status.json")
+	// Ensure parent directory exists to avoid failures when called from tests or
+	// auxiliary tooling that may not have created the run directory yet.
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -405,7 +448,17 @@ func (e *Engine) ListRuns() ([]Run, error) {
 		return runs[i].StartTime.After(runs[j].StartTime)
 	})
 
-	return runs, nil
+	// Deduplicate runs by ID (in case of stale data or file system glitches)
+	seen := make(map[string]bool)
+	uniqueRuns := []Run{}
+	for _, run := range runs {
+		if !seen[run.ID] {
+			seen[run.ID] = true
+			uniqueRuns = append(uniqueRuns, run)
+		}
+	}
+
+	return uniqueRuns, nil
 }
 
 func (e *Engine) GetRun(runID string) (*Run, error) {

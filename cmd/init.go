@@ -9,6 +9,7 @@ import (
 	"devswarm/internal/workspace"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var initCmd = &cobra.Command{
@@ -65,21 +66,32 @@ Clones the repository into a 'repo' subdirectory and sets up configuration.`,
 
 		if userName != "" || userEmail != "" {
 			fmt.Printf("Detected git identity: %s <%s>\n", userName, userEmail)
-			// Read current config
-			configPath := filepath.Join(wm.RootPath, workspace.MetaDir, workspace.ConfigFile)
-			configData, err := os.ReadFile(configPath)
-			if err == nil {
-				// Simple string replacement to inject user/email (avoiding full yaml parsing for simplicity in init)
-				// Or better, use workspace manager method if available.
-				// Since we just generated it, we know the format.
-				newContent := string(configData)
+
+			// Load existing config
+			config, err := wm.GetConfig()
+			if err != nil {
+				fmt.Printf("Warning: Failed to load config.yaml: %v\n", err)
+			} else {
+				// Update config
 				if userName != "" {
-					newContent = newContent + fmt.Sprintf("  user: %s\n", userName)
+					config.Git.User = userName
 				}
 				if userEmail != "" {
-					newContent = newContent + fmt.Sprintf("  email: %s\n", userEmail)
+					config.Git.Email = userEmail
 				}
-				os.WriteFile(configPath, []byte(newContent), 0644)
+
+				// Save config back
+				configPath := filepath.Join(wm.RootPath, workspace.MetaDir, workspace.ConfigFile)
+				data, err := yaml.Marshal(config)
+				if err != nil {
+					fmt.Printf("Warning: Failed to marshal config.yaml: %v\n", err)
+				} else {
+					if err := os.WriteFile(configPath, data, 0644); err != nil {
+						fmt.Printf("Warning: Failed to save config.yaml: %v\n", err)
+					} else {
+						fmt.Println("✔ Updated config.yaml with git identity.")
+					}
+				}
 			}
 		}
 

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -78,9 +79,82 @@ func TestInit(t *testing.T) {
 		t.Errorf("workspaces directory not created")
 	}
 
+	// Verify V1 config files are generated
+	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, ConfigFile)); os.IsNotExist(err) {
+		t.Errorf("config.yaml not created")
+	}
+	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, WorkflowsDir, "default.yaml")); os.IsNotExist(err) {
+		t.Errorf("default workflow not created")
+	}
+	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, AgentsDir, "ut-agent.yaml")); os.IsNotExist(err) {
+		t.Errorf("ut-agent.yaml not created")
+	}
+	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, AgentsDir, "cr-agent.yaml")); os.IsNotExist(err) {
+		t.Errorf("cr-agent.yaml not created")
+	}
+	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, PromptsDir, "ut.md")); os.IsNotExist(err) {
+		t.Errorf("ut.md prompt not created")
+	}
+	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, PromptsDir, "cr.md")); os.IsNotExist(err) {
+		t.Errorf("cr.md prompt not created")
+	}
+
+	// Verify GetConfig parses config.yaml correctly
+	config, err := wm.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig failed: %v", err)
+	}
+	if config.Git.MainBranch != "main" {
+		t.Errorf("config.Git.MainBranch = %q, want %q", config.Git.MainBranch, "main")
+	}
+	if config.Workspace != "workspaces" {
+		t.Errorf("config.Workspace = %q, want %q", config.Workspace, "workspaces")
+	}
+	if def, ok := config.Workflow["default"]; !ok || def != "default" {
+		t.Errorf("config.Workflow[\"default\"] = %q, want %q", def, "default")
+	}
+
 	// Verify state file
 	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, StateFile)); os.IsNotExist(err) {
 		t.Errorf("state.json not created")
+	}
+}
+
+// TestInitGeneratesV1Configs verifies that Init (which calls generateV1Configs)
+// produces V1 configuration files that are aligned with the current defaults,
+// including the updated agent runtime and unit-test prompt content.
+func TestInitGeneratesV1Configs(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	// 1. ut-agent.yaml should use trae-agent as the code agent runtime
+	utAgentPath := filepath.Join(wm.RootPath, MetaDir, AgentsDir, "ut-agent.yaml")
+	data, err := os.ReadFile(utAgentPath)
+	if err != nil {
+		t.Fatalf("failed to read ut-agent.yaml: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "code-agent: trae-agent") {
+		t.Errorf("ut-agent.yaml does not configure trae-agent runtime; content: %s", content)
+	}
+
+	// 2. prompts/ut.md should contain the updated unit test generation instructions
+	utPromptPath := filepath.Join(wm.RootPath, MetaDir, PromptsDir, "ut.md")
+	data, err = os.ReadFile(utPromptPath)
+	if err != nil {
+		t.Fatalf("failed to read ut.md: %v", err)
+	}
+	prompt := string(data)
+
+	requiredSubstrings := []string{
+		"Your task is to review the code changes and directly modify the codebase to add or update unit tests.",
+		"Do not output the code block in chat, just write to files.",
+	}
+
+	for _, sub := range requiredSubstrings {
+		if !strings.Contains(prompt, sub) {
+			t.Errorf("ut.md missing required text %q. Full prompt: %s", sub, prompt)
+		}
 	}
 }
 
@@ -171,6 +245,54 @@ func TestMergeNode(t *testing.T) {
 	repoFile := filepath.Join(wm.State.RepoPath, "new-feature.txt")
 	if _, err := os.Stat(repoFile); os.IsNotExist(err) {
 		t.Errorf("Merged file not found in main repo")
+	}
+}
+
+func TestSpawnNodeFeatureMode(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	nodeName := "feature-node"
+	logicialBranch := "feature/feature-mode"
+
+	// Feature mode: isShadow=false should create a worktree directly on the logical branch.
+	if err := wm.SpawnNode(nodeName, logicialBranch, "main", "Feature mode", false); err != nil {
+		t.Fatalf("SpawnNode (feature mode) failed: %v", err)
+	}
+
+	node, exists := wm.State.Nodes[nodeName]
+	if !exists {
+		t.Fatalf("node not found in state after SpawnNode")
+	}
+
+	if node.ShadowBranch != logicialBranch {
+		t.Errorf("expected shadow branch to equal logical branch, got %q", node.ShadowBranch)
+	}
+
+	if _, err := os.Stat(node.WorktreePath); os.IsNotExist(err) {
+		t.Errorf("worktree directory not created at %s", node.WorktreePath)
+	}
+
+	// logical branch should exist in the main repo
+	if err := git.VerifyBranch(wm.State.RepoPath, logicialBranch); err != nil {
+		t.Errorf("logical branch %q not created in repo: %v", logicialBranch, err)
+	}
+}
+
+func TestGetConfig(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	config, err := wm.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig returned error: %v", err)
+	}
+
+	if config.Workspace == "" {
+		t.Errorf("expected workspace field to be non-empty")
+	}
+	if config.Git.MainBranch != "main" {
+		t.Errorf("expected git.main_branch to be 'main', got %q", config.Git.MainBranch)
 	}
 }
 

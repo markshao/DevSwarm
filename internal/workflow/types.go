@@ -19,7 +19,9 @@ type Run struct {
 	ID        string       `json:"id"`
 	Workflow  string       `json:"workflow"`
 	Trigger   string       `json:"trigger"` // e.g. "commit", "manual"
+	TriggerData string     `json:"trigger_data,omitempty"` // e.g. commit hash
 	BaseBranch string      `json:"base_branch"`
+	TriggeredByNode string `json:"triggered_by_node,omitempty"` // The human node that triggered this run
 	Status    RunStatus    `json:"status"`
 	StartTime time.Time    `json:"start_time"`
 	EndTime   time.Time    `json:"end_time,omitempty"`

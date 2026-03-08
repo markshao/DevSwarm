@@ -192,7 +192,7 @@ pipeline:
 
 runtime:
   executor: tmux
-  code-agent: qwen
+  code-agent: trae-agent
 
 prompt: ut.md
 
@@ -211,7 +211,7 @@ env:
 
 runtime:
   executor: tmux
-  code-agent: qwen
+  code-agent: trae-agent
 
 prompt: cr.md
 
@@ -229,16 +229,21 @@ env:
 	utPromptContent := `# Unit Test Generation
 
 You are an expert software engineer.
-Your task is to generate unit tests for the changed code.
+Your task is to analyze the code changes provided below and **immediately generate and write unit tests** for them.
 
-IMPORTANT:
-- Do not ask for confirmation.
-- Directly generate the code.
-- Output the code block.
+**INSTRUCTIONS:**
+1. Analyze the Diff to understand what changed.
+2. Identify the corresponding test file (create one if it doesn't exist).
+3. **USE YOUR FILE EDITING TOOLS IMMEDIATELY** to write the test code.
+4. **DO NOT ASK QUESTIONS.**
+5. **DO NOT EXPLAIN THE PLAN.**
+6. **DO NOT OUTPUT CODE BLOCKS IN THE CHAT.**
+7. JUST EDIT THE FILES.
 
-Context:
+**Context:**
 - Branch: {{.Branch}}
-- Diff: {{.Diff}}
+- Diff:
+{{.Diff}}
 `
 	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, PromptsDir, "ut.md"), []byte(utPromptContent), 0644); err != nil {
 		return err
@@ -303,7 +308,7 @@ func (wm *WorkspaceManager) LoadState() error {
 // 2. Creates shadow branch (if isShadow=true) or uses logical branch directly
 // 3. Creates git worktree
 // 4. Updates state
-func (wm *WorkspaceManager) SpawnNode(nodeName, logicalBranch, baseBranch, purpose string, isShadow bool) error {
+func (wm *WorkspaceManager) SpawnNode(nodeName, logicalBranch, baseBranch, label string, isShadow bool) error {
 	// 0. Check if node already exists
 	if wm.State.Nodes == nil {
 		wm.State.Nodes = make(map[string]types.Node)
@@ -358,7 +363,8 @@ func (wm *WorkspaceManager) SpawnNode(nodeName, logicalBranch, baseBranch, purpo
 		BaseBranch:    baseBranch,
 		ShadowBranch:  shadowBranch,
 		WorktreePath:  worktreePath,
-		Purpose:       purpose,
+		Label:         label,
+		CreatedBy:     "user",
 		CreatedAt:     time.Now(),
 		// TmuxSession is empty initially
 	}

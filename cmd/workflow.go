@@ -29,6 +29,8 @@ var runWorkflowCmd = &cobra.Command{
 			wfName = args[0]
 		}
 
+		trigger, _ := cmd.Flags().GetString("trigger")
+
 		cwd, err := os.Getwd()
 		if err != nil {
 			color.Red("Error getting current directory: %v", err)
@@ -54,10 +56,19 @@ var runWorkflowCmd = &cobra.Command{
 		if err == nil && nodeName != "" {
 			fmt.Printf("Detected node context: %s\n", nodeName)
 			baseBranch = node.ShadowBranch
+
+			// Recursion Guard: Do not allow workflows to be triggered from within a workflow run (Shadow Branch)
+			// Shadow branches follow the pattern: devswarm/run-<id>/<step>
+			// We check if the branch name starts with "devswarm/run-"
+			if len(baseBranch) > 13 && baseBranch[:13] == "devswarm/run-" {
+				color.Red("Recursion detected: Cannot trigger a workflow from within an active workflow run agent.")
+				color.Yellow("This prevents infinite loops when agents commit code.")
+				os.Exit(0) // Exit successfully to avoid error spam in hooks
+			}
 		}
 
 		engine := workflow.NewEngine(wm)
-		run, err := engine.StartRun(wfName, "manual", baseBranch)
+		run, err := engine.StartRun(wfName, trigger, baseBranch, nodeName)
 		if err != nil {
 			color.Red("Failed to start workflow: %v", err)
 			os.Exit(1)
@@ -104,15 +115,18 @@ var lsWorkflowCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "RUN ID\tWORKFLOW\tTRIGGER\tSTATUS\tSTARTED\tDURATION")
+		fmt.Fprintln(w, "RUN ID\tWORKFLOW\tTRIGGER\tSTATUS\tSTARTED\tDURATION\tBASE BRANCH")
 
 		for _, run := range runs {
-			statusColor := color.New(color.FgYellow).SprintFunc()
-			if run.Status == workflow.StatusSuccess {
-				statusColor = color.New(color.FgGreen).SprintFunc()
-			} else if run.Status == workflow.StatusFailed {
-				statusColor = color.New(color.FgRed).SprintFunc()
-			}
+			// Status color logic (moved outside Fprintf to avoid tabwriter issues with ANSI codes)
+			// But since tabwriter calculates width including ANSI codes, it breaks alignment.
+			// The simplest fix for CLI is to print status without color in the table,
+			// OR use a fixed width manually, OR use a library.
+			// Here we choose to keep color but accept slight misalignment? No, user complained.
+			// Let's remove color from the table output to ensure perfect alignment,
+			// or use a helper to strip colors for width calc if possible (hard).
+			// Actually, let's just print plain status for now to fix alignment.
+			statusStr := string(run.Status)
 
 			duration := "Running"
 			if !run.EndTime.IsZero() {
@@ -121,23 +135,68 @@ var lsWorkflowCmd = &cobra.Command{
 				duration = time.Since(run.StartTime).Round(time.Second).String() + "..."
 			}
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				run.ID,
 				run.Workflow,
-				run.Trigger,
-				statusColor(string(run.Status)),
+				getTriggerDisplay(run),
+				statusStr,
 				run.StartTime.Format("2006-01-02 15:04:05"),
 				duration,
+				run.BaseBranch,
 			)
 		}
 		w.Flush()
 	},
 }
 
+func getTriggerDisplay(run workflow.Run) string {
+	if run.Trigger == "commit" && run.TriggerData != "" {
+		hash := run.TriggerData
+		if len(hash) > 7 {
+			hash = hash[:7]
+		}
+		return fmt.Sprintf("commit(%s)", hash)
+	}
+	return run.Trigger
+}
+
 var inspectWorkflowCmd = &cobra.Command{
 	Use:   "inspect [run_id]",
 	Short: "Inspect a specific workflow run",
 	Args:  cobra.ExactArgs(1),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// Only autocomplete the first argument (run_id)
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		rootPath, err := workspace.FindWorkspaceRoot(cwd)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		wm, err := workspace.NewManager(rootPath)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		engine := workflow.NewEngine(wm)
+		runs, err := engine.ListRuns()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		var completions []string
+		for _, run := range runs {
+			// Format: "run-id\tWorkflow - Status (Started)"
+			desc := fmt.Sprintf("%s - %s (%s)", run.Workflow, run.Status, run.StartTime.Format("01-02 15:04"))
+			completions = append(completions, fmt.Sprintf("%s\t%s", run.ID, desc))
+		}
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		runID := args[0]
 
@@ -169,19 +228,16 @@ var inspectWorkflowCmd = &cobra.Command{
 
 		fmt.Printf("Run ID: %s\n", color.CyanString(run.ID))
 		fmt.Printf("Workflow: %s\n", run.Workflow)
+		fmt.Printf("Base Branch: %s\n", run.BaseBranch)
 		fmt.Printf("Status: %s\n", run.Status)
 		fmt.Println("\nPipeline Steps:")
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "STEP\tAGENT\tSTATUS\tNODE\tDURATION")
+		fmt.Fprintln(w, "STEP\tAGENT\tSTATUS\tNODE\tSHADOW BRANCH\tDURATION")
 
 		for _, step := range run.Steps {
-			statusColor := color.New(color.FgYellow).SprintFunc()
-			if step.Status == workflow.StatusSuccess {
-				statusColor = color.New(color.FgGreen).SprintFunc()
-			} else if step.Status == workflow.StatusFailed {
-				statusColor = color.New(color.FgRed).SprintFunc()
-			}
+			// Remove color for alignment
+			statusStr := string(step.Status)
 
 			duration := "-"
 			if !step.StartTime.IsZero() {
@@ -192,11 +248,12 @@ var inspectWorkflowCmd = &cobra.Command{
 				}
 			}
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 				step.ID,
 				step.Agent,
-				statusColor(string(step.Status)),
+				statusStr,
 				step.NodeName,
+				step.ShadowBranch,
 				duration,
 			)
 		}
@@ -217,6 +274,8 @@ var inspectWorkflowCmd = &cobra.Command{
 }
 
 func init() {
+	runWorkflowCmd.Flags().StringP("trigger", "t", "manual", "Trigger type (e.g. manual, commit)")
+
 	rootCmd.AddCommand(workflowCmd)
 	workflowCmd.AddCommand(runWorkflowCmd)
 	workflowCmd.AddCommand(lsWorkflowCmd)
