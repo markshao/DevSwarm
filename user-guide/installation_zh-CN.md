@@ -12,7 +12,7 @@
     # macOS
     brew install tmux
     ```
-3.  **Trae Agent**: AI Agent 运行时。确保 `trae-agent` 在你的 PATH 中。
+3.  **Qwen**: AI Agent 运行时。确保 `qwen` 在你的 PATH 中。
 4.  **Go**: 版本 1.21+ (源码构建需要)。
 
 ## 源码构建

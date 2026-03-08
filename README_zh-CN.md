@@ -103,7 +103,7 @@ ds apply login-dev
 - **Golang**: 核心逻辑与 CLI (Cobra)。
 - **Git Worktree**: 文件系统隔离。
 - **Tmux**: 进程与会话隔离。
-- **Trae Agent**: 驱动自动化的 AI 引擎。
+- **Qwen**: 驱动自动化的 AI 引擎。
 
 ## License
 

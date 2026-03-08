@@ -195,7 +195,7 @@ pipeline:
 
 runtime:
   executor: tmux
-  code-agent: trae-agent
+  code-agent: qwen
 
 prompt: ut.md
 
@@ -214,7 +214,7 @@ env:
 
 runtime:
   executor: tmux
-  code-agent: trae-agent
+  code-agent: qwen
 
 prompt: cr.md
 

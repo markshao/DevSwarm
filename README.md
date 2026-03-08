@@ -103,7 +103,7 @@ ds apply login-dev
 - **Golang**: Core logic and CLI (Cobra).
 - **Git Worktree**: File system isolation.
 - **Tmux**: Process and session isolation.
-- **Trae Agent**: The AI engine powering the automation.
+- **Qwen**: The AI engine powering the automation.
 
 ## License
 

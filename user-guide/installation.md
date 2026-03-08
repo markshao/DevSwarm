@@ -12,7 +12,7 @@ Before installing DevSwarm, ensure you have the following dependencies installed
     # macOS
     brew install tmux
     ```
-3.  **Trae Agent**: The AI agent runtime. Ensure `trae-agent` is in your PATH.
+3.  **Qwen**: The AI agent runtime. Ensure `qwen` is in your PATH.
 4.  **Go**: Version 1.21+ (Required to build from source).
 
 ## Building from Source (源码构建)
