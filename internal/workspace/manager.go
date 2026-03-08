@@ -13,6 +13,8 @@ import (
 	"devswarm/internal/tmux"
 	"devswarm/internal/types"
 	"devswarm/internal/vscode"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -21,6 +23,13 @@ const (
 	MetaDir       = ".devswarm"
 	StateFile     = "state.json"
 	ConfigFile    = "config.yaml"
+
+	// V1 Directories inside .devswarm
+	WorkflowsDir = "workflows"
+	AgentsDir    = "agents"
+	PromptsDir   = "prompts"
+	RunsDir      = "runs"
+	RuntimeDir   = "runtime"
 )
 
 // WorkspaceManager handles all high-level operations on the DevSwarm workspace.
@@ -69,8 +78,11 @@ func FindWorkspaceRoot(startPath string) (string, error) {
 // SyncVSCodeWorkspace updates the .code-workspace file with current nodes
 func (wm *WorkspaceManager) SyncVSCodeWorkspace() error {
 	var nodes []string
-	for name := range wm.State.Nodes {
-		nodes = append(nodes, name)
+	for name, node := range wm.State.Nodes {
+		// Only include user-created nodes
+		if node.CreatedBy == "user" {
+			nodes = append(nodes, name)
+		}
 	}
 	return vscode.UpdateWorkspaceFile(wm.RootPath, RepoDir, WorkspacesDir, nodes)
 }
@@ -83,6 +95,12 @@ func Init(rootPath, repoURL string) (*WorkspaceManager, error) {
 		filepath.Join(rootPath, RepoDir),
 		filepath.Join(rootPath, WorkspacesDir),
 		filepath.Join(rootPath, MetaDir),
+		// V1 Directories
+		filepath.Join(rootPath, MetaDir, WorkflowsDir),
+		filepath.Join(rootPath, MetaDir, AgentsDir),
+		filepath.Join(rootPath, MetaDir, PromptsDir),
+		filepath.Join(rootPath, MetaDir, RunsDir),
+		filepath.Join(rootPath, MetaDir, RuntimeDir),
 	}
 
 	for _, d := range dirs {
@@ -108,7 +126,151 @@ func Init(rootPath, repoURL string) (*WorkspaceManager, error) {
 		return nil, fmt.Errorf("failed to save initial state: %w", err)
 	}
 
+	// 4. Generate default V1 configuration files
+	if err := wm.generateV1Configs(); err != nil {
+		return nil, fmt.Errorf("failed to generate v1 configs: %w", err)
+	}
+
 	return wm, nil
+}
+
+// GetConfig loads the .devswarm/config.yaml
+func (wm *WorkspaceManager) GetConfig() (*types.Config, error) {
+	configPath := filepath.Join(wm.RootPath, MetaDir, ConfigFile)
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+	var config types.Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+// generateV1Configs generates default V1 configuration files
+func (wm *WorkspaceManager) generateV1Configs() error {
+	// 1. config.yaml
+	configContent := `version: 1
+
+workspace: workspaces
+
+git:
+  main_branch: main
+
+workflow:
+  default: default
+
+runtime:
+  artifact_dir: .devswarm/runs
+`
+	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, ConfigFile), []byte(configContent), 0644); err != nil {
+		return err
+	}
+
+	// 2. workflows/default.yaml
+	workflowContent := `name: default
+
+trigger:
+  event: commit
+
+pipeline:
+  - id: ut
+    agent: ut-agent
+    branch: shadow
+    suffix: ut
+
+  - id: cr
+    agent: cr-agent
+    depends_on: [ut]
+    branch: shadow
+    suffix: cr
+`
+	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, WorkflowsDir, "default.yaml"), []byte(workflowContent), 0644); err != nil {
+		return err
+	}
+
+	// 3. agents/ut-agent.yaml
+	utAgentContent := `name: ut-agent
+
+runtime:
+  executor: tmux
+  code-agent: qwen
+
+prompt: ut.md
+
+env:
+  - DEVSWARM_RUN_ID
+  - DEVSWARM_AGENT_BRANCH
+  - DEVSWARM_HUMAN_BRANCH
+  - DEVSWARM_ARTIFACT_DIR
+`
+	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, AgentsDir, "ut-agent.yaml"), []byte(utAgentContent), 0644); err != nil {
+		return err
+	}
+
+	// 4. agents/cr-agent.yaml
+	crAgentContent := `name: cr-agent
+
+runtime:
+  executor: tmux
+  code-agent: qwen
+
+prompt: cr.md
+
+env:
+  - DEVSWARM_RUN_ID
+  - DEVSWARM_AGENT_BRANCH
+  - DEVSWARM_HUMAN_BRANCH
+  - DEVSWARM_ARTIFACT_DIR
+`
+	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, AgentsDir, "cr-agent.yaml"), []byte(crAgentContent), 0644); err != nil {
+		return err
+	}
+
+	// 5. prompts/ut.md
+	utPromptContent := `# Unit Test Generation
+
+You are an expert software engineer.
+Your task is to analyze the code changes provided below and **immediately generate and write unit tests** for them.
+
+**INSTRUCTIONS:**
+1. Analyze the Diff to understand what changed.
+2. Identify the corresponding test file (create one if it doesn't exist).
+3. **USE YOUR FILE EDITING TOOLS IMMEDIATELY** to write the test code.
+4. **DO NOT ASK QUESTIONS.**
+5. **DO NOT EXPLAIN THE PLAN.**
+6. **DO NOT OUTPUT CODE BLOCKS IN THE CHAT.**
+7. JUST EDIT THE FILES.
+
+**Context:**
+- Branch: {{.Branch}}
+- Diff:
+{{.Diff}}
+`
+	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, PromptsDir, "ut.md"), []byte(utPromptContent), 0644); err != nil {
+		return err
+	}
+
+	// 6. prompts/cr.md
+	crPromptContent := `# Code Review
+
+You are a senior code reviewer.
+Your task is to review the code changes and provide constructive feedback.
+
+IMPORTANT:
+- Do not ask for confirmation.
+- Directly output your review.
+
+Context:
+- Branch: {{.Branch}}
+- Diff: {{.Diff}}
+`
+	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, PromptsDir, "cr.md"), []byte(crPromptContent), 0644); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // SaveState persists the current state to .devswarm/state.json
@@ -149,7 +311,7 @@ func (wm *WorkspaceManager) LoadState() error {
 // 2. Creates shadow branch (if isShadow=true) or uses logical branch directly
 // 3. Creates git worktree
 // 4. Updates state
-func (wm *WorkspaceManager) SpawnNode(nodeName, logicalBranch, baseBranch, purpose string, isShadow bool) error {
+func (wm *WorkspaceManager) SpawnNode(nodeName, logicalBranch, baseBranch, label string, isShadow bool) error {
 	// 0. Check if node already exists
 	if wm.State.Nodes == nil {
 		wm.State.Nodes = make(map[string]types.Node)
@@ -201,9 +363,11 @@ func (wm *WorkspaceManager) SpawnNode(nodeName, logicalBranch, baseBranch, purpo
 	newNode := types.Node{
 		Name:          nodeName,
 		LogicalBranch: logicalBranch,
+		BaseBranch:    baseBranch,
 		ShadowBranch:  shadowBranch,
 		WorktreePath:  worktreePath,
-		Purpose:       purpose,
+		Label:         label,
+		CreatedBy:     "user",
 		CreatedAt:     time.Now(),
 		// TmuxSession is empty initially
 	}

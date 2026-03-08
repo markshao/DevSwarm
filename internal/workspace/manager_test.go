@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -50,7 +51,7 @@ func setupTestWorkspace(t *testing.T) (*WorkspaceManager, func()) {
 		os.RemoveAll(remoteDir)
 		t.Fatalf("Clone failed: %v", err)
 	}
-	
+
 	// Configure user for local repo as well
 	exec.Command("git", "-C", wm.State.RepoPath, "config", "user.email", "test@example.com").Run()
 	exec.Command("git", "-C", wm.State.RepoPath, "config", "user.name", "Test User").Run()
@@ -78,9 +79,82 @@ func TestInit(t *testing.T) {
 		t.Errorf("workspaces directory not created")
 	}
 
+	// Verify V1 config files are generated
+	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, ConfigFile)); os.IsNotExist(err) {
+		t.Errorf("config.yaml not created")
+	}
+	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, WorkflowsDir, "default.yaml")); os.IsNotExist(err) {
+		t.Errorf("default workflow not created")
+	}
+	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, AgentsDir, "ut-agent.yaml")); os.IsNotExist(err) {
+		t.Errorf("ut-agent.yaml not created")
+	}
+	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, AgentsDir, "cr-agent.yaml")); os.IsNotExist(err) {
+		t.Errorf("cr-agent.yaml not created")
+	}
+	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, PromptsDir, "ut.md")); os.IsNotExist(err) {
+		t.Errorf("ut.md prompt not created")
+	}
+	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, PromptsDir, "cr.md")); os.IsNotExist(err) {
+		t.Errorf("cr.md prompt not created")
+	}
+
+	// Verify GetConfig parses config.yaml correctly
+	config, err := wm.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig failed: %v", err)
+	}
+	if config.Git.MainBranch != "main" {
+		t.Errorf("config.Git.MainBranch = %q, want %q", config.Git.MainBranch, "main")
+	}
+	if config.Workspace != "workspaces" {
+		t.Errorf("config.Workspace = %q, want %q", config.Workspace, "workspaces")
+	}
+	if def, ok := config.Workflow["default"]; !ok || def != "default" {
+		t.Errorf("config.Workflow[\"default\"] = %q, want %q", def, "default")
+	}
+
 	// Verify state file
 	if _, err := os.Stat(filepath.Join(wm.RootPath, MetaDir, StateFile)); os.IsNotExist(err) {
 		t.Errorf("state.json not created")
+	}
+}
+
+// TestInitGeneratesV1Configs verifies that Init (which calls generateV1Configs)
+// produces V1 configuration files that are aligned with the current defaults,
+// including the updated agent runtime and unit-test prompt content.
+func TestInitGeneratesV1Configs(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	// 1. ut-agent.yaml should use qwen as the code agent runtime
+	utAgentPath := filepath.Join(wm.RootPath, MetaDir, AgentsDir, "ut-agent.yaml")
+	data, err := os.ReadFile(utAgentPath)
+	if err != nil {
+		t.Fatalf("failed to read ut-agent.yaml: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "code-agent: qwen") {
+		t.Errorf("ut-agent.yaml does not configure qwen runtime; content: %s", content)
+	}
+
+	// 2. prompts/ut.md should contain the updated unit test generation instructions
+	utPromptPath := filepath.Join(wm.RootPath, MetaDir, PromptsDir, "ut.md")
+	data, err = os.ReadFile(utPromptPath)
+	if err != nil {
+		t.Fatalf("failed to read ut.md: %v", err)
+	}
+	prompt := string(data)
+
+	requiredSubstrings := []string{
+		"Your task is to analyze the code changes provided below and **immediately generate and write unit tests** for them.",
+		"**DO NOT OUTPUT CODE BLOCKS IN THE CHAT.**",
+	}
+
+	for _, sub := range requiredSubstrings {
+		if !strings.Contains(prompt, sub) {
+			t.Errorf("ut.md missing required text %q. Full prompt: %s", sub, prompt)
+		}
 	}
 }
 
@@ -148,7 +222,7 @@ func TestMergeNode(t *testing.T) {
 	// 2. Make changes in the node's worktree
 	newFile := filepath.Join(node.WorktreePath, "new-feature.txt")
 	os.WriteFile(newFile, []byte("content"), 0644)
-	
+
 	exec.Command("git", "-C", node.WorktreePath, "add", ".").Run()
 	exec.Command("git", "-C", node.WorktreePath, "commit", "-m", "Work in node").Run()
 
@@ -162,11 +236,11 @@ func TestMergeNode(t *testing.T) {
 	// We need to check if logicalBranch has the commit.
 	// Note: SquashMerge happens in wm.State.RepoPath.
 	// But wait, SquashMerge checks out logicalBranch in RepoPath.
-	
+
 	// Let's verify file exists in RepoPath (after checkout logicalBranch)
 	// VerifyBranch checks out? No, VerifyBranch just checks existence.
 	// SquashMerge does checkout. So RepoPath should be on logicalBranch now.
-	
+
 	// Check if file exists in main repo
 	repoFile := filepath.Join(wm.State.RepoPath, "new-feature.txt")
 	if _, err := os.Stat(repoFile); os.IsNotExist(err) {
@@ -174,11 +248,59 @@ func TestMergeNode(t *testing.T) {
 	}
 }
 
+func TestSpawnNodeFeatureMode(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	nodeName := "feature-node"
+	logicialBranch := "feature/feature-mode"
+
+	// Feature mode: isShadow=false should create a worktree directly on the logical branch.
+	if err := wm.SpawnNode(nodeName, logicialBranch, "main", "Feature mode", false); err != nil {
+		t.Fatalf("SpawnNode (feature mode) failed: %v", err)
+	}
+
+	node, exists := wm.State.Nodes[nodeName]
+	if !exists {
+		t.Fatalf("node not found in state after SpawnNode")
+	}
+
+	if node.ShadowBranch != logicialBranch {
+		t.Errorf("expected shadow branch to equal logical branch, got %q", node.ShadowBranch)
+	}
+
+	if _, err := os.Stat(node.WorktreePath); os.IsNotExist(err) {
+		t.Errorf("worktree directory not created at %s", node.WorktreePath)
+	}
+
+	// logical branch should exist in the main repo
+	if err := git.VerifyBranch(wm.State.RepoPath, logicialBranch); err != nil {
+		t.Errorf("logical branch %q not created in repo: %v", logicialBranch, err)
+	}
+}
+
+func TestGetConfig(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	config, err := wm.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig returned error: %v", err)
+	}
+
+	if config.Workspace == "" {
+		t.Errorf("expected workspace field to be non-empty")
+	}
+	if config.Git.MainBranch != "main" {
+		t.Errorf("expected git.main_branch to be 'main', got %q", config.Git.MainBranch)
+	}
+}
+
 func TestFindNodeByPath(t *testing.T) {
 	// Keep the original unit test logic but maybe use the helper if we want integration test?
 	// The original test used a mock state. Let's keep it simple and just use a struct literal state like before,
 	// because creating real worktrees for path testing is slow/overkill.
-	
+
 	// Setup a mock workspace manager
 	wm := &WorkspaceManager{
 		State: &types.State{
@@ -252,7 +374,7 @@ func TestFindNodeByPath(t *testing.T) {
 		}{
 			name:      "Case mismatch on macOS (Input lower, Node mixed)",
 			inputPath: "/users/user/devswarm_ws/nodes/node1/main.go",
-			wantNode:  "node1", 
+			wantNode:  "node1",
 			wantFound: true,
 		})
 	}
@@ -263,14 +385,14 @@ func TestFindNodeByPath(t *testing.T) {
 			// Since we are using fake paths, this might fail if we don't mock them.
 			// However, FindNodeByPath logic handles errors from EvalSymlinks by falling back.
 			// So it should work for string comparison logic mostly.
-			
+
 			gotNode, _, _ := wm.FindNodeByPath(tt.inputPath)
 			if gotNode != tt.wantNode {
 				// On Linux, paths that don't exist might behave differently with Abs/Rel
 				// But let's see. If it fails, we know we need to mock FS.
 				// For now, let's allow it to fail if it must, but ideally we should only run FS tests on real FS.
 				// But this specific test block is testing string logic.
-				
+
 				// ACTUALLY: filepath.Abs works on string. EvalSymlinks fails if not exist.
 				// The code:
 				// canonicalPath, err := filepath.EvalSymlinks(absPath)
@@ -278,9 +400,52 @@ func TestFindNodeByPath(t *testing.T) {
 				// So it falls back to absPath.
 				// Then: rel, err := filepath.Rel(nodePath, canonicalPath)
 				// This should work fine for fake paths.
-				
+
 				t.Errorf("FindNodeByPath(%q) = %v, want %v", tt.inputPath, gotNode, tt.wantNode)
 			}
 		})
+	}
+}
+
+func TestAppliedRunsPersistence(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	nodeName := "test-node-applied"
+	logicalBranch := "feature/applied"
+
+	// 1. Spawn Node
+	// Note: SpawnNode now takes (nodeName, logicalBranch, baseBranch, label, isShadow)
+	err := wm.SpawnNode(nodeName, logicalBranch, "main", "Testing persistence", true)
+	if err != nil {
+		t.Fatalf("SpawnNode failed: %v", err)
+	}
+
+	// 2. Modify node state (add applied runs)
+	node := wm.State.Nodes[nodeName]
+	node.AppliedRuns = []string{"run-1", "run-2"}
+	wm.State.Nodes[nodeName] = node
+
+	// 3. Save State
+	if err := wm.SaveState(); err != nil {
+		t.Fatalf("Failed to save state: %v", err)
+	}
+
+	// 4. Reload Manager
+	wm2, err := NewManager(wm.RootPath)
+	if err != nil {
+		t.Fatalf("Failed to reload manager: %v", err)
+	}
+
+	loadedNode, exists := wm2.State.Nodes[nodeName]
+	if !exists {
+		t.Fatalf("Node not found after reload")
+	}
+
+	if len(loadedNode.AppliedRuns) != 2 {
+		t.Errorf("Expected 2 applied runs, got %d", len(loadedNode.AppliedRuns))
+	}
+	if loadedNode.AppliedRuns[0] != "run-1" || loadedNode.AppliedRuns[1] != "run-2" {
+		t.Errorf("AppliedRuns content mismatch: %v", loadedNode.AppliedRuns)
 	}
 }

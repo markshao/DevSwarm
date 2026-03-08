@@ -1,213 +1,110 @@
-# DevSwarm 🐝
+# DevSwarm: AI-Native Development Environment Manager
 
-English | [中文](README_cn.md)
+[![Go Version](https://img.shields.io/badge/go-1.21+-blue.svg)](https://golang.org/dl/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-**DevSwarm** is an AI-native development environment manager designed to facilitate concurrent collaboration between humans and AI agents.
+[**English**](README.md) | [**简体中文**](README_zh-CN.md)
 
-In the era of AI Coding, traditional Git workflows struggle to support multi-task concurrency on the same logical branch. DevSwarm solves this by virtualizing Git branches into **Nodes**, where each node provides an isolated environment (Worktree + Tmux Session) for humans or agents to work independently without conflict.
+**DevSwarm** is a CLI tool designed for the **Agentic DevOps** era. It virtualizes your local development environment, allowing you to collaborate with AI Agents as if they were teammates sitting next to you.
 
-## 🚀 Key Features
+---
 
-- **Node Abstraction**: Shields the complexity of `git worktree`, providing a clean interface to manage concurrent development units.
-- **Environment Isolation**: Each Node has its own file system (Worktree) and runtime session (Tmux), ensuring zero interference.
-- **Shadow Branching**: Automatically manages `shadow branches` (e.g., `devswarm/login-test/feature/login`) to allow parallel work on the same logical feature.
-- **AI-Ready**: Designed as infrastructure for AI Agents, allowing them to spawn, code, and test in their own sandboxed nodes.
-- **State Management**: Persists workspace state to survive restarts and crashes.
+## 🌟 Core Concept: Agentic DevOps
 
-## 📦 Installation
+Traditional DevOps relies on remote CI/CD pipelines—slow, stateless, and disconnected from your IDE. 
 
-### Prerequisites
+**DevSwarm brings the pipeline to your local machine.** It introduces the concept of **Nodes**:
+*   **Human Node**: Your dedicated workspace (Git Worktree + Tmux Session).
+*   **Agentic Node**: An ephemeral workspace where AI Agents running in the background can write code, run tests, and fix bugs *concurrently* with you.
 
-Ensure you have the following tools installed on your system:
+### The "Chain of Branch" Workflow
 
-- **Git** (v2.20+)
-- **Tmux** (v3.0+)
+Instead of blocking your work, DevSwarm orchestrates a chain of **Shadow Branches**:
 
-### Install via Script
-
-We provide an automated installation script that downloads the latest binary release from GitHub and configures autocompletion.
-
-```bash
-curl -sL https://raw.githubusercontent.com/markshao/DevSwarm/main/install.sh | bash
+```mermaid
+graph TD
+    User((User)) -->|1. Commit| HumanNode["Human Node<br/>(feature/login)"]
+    HumanNode -->|2. Trigger| Workflow{Workflow Engine}
+    
+    subgraph "Agentic Workflow (Local)"
+        Workflow -->|3. Spawn| AgentNode1["Agent: Unit Test<br/>(shadow/ut)"]
+        AgentNode1 -- Fixes & Commits --> AgentNode2["Agent: Code Review<br/>(shadow/cr)"]
+    end
+    
+    AgentNode2 -->|4. Ready| FinalState(Finished Run)
+    
+    User -->|5. ds apply| FinalState
+    FinalState -- Merge Back --> HumanNode
 ```
 
-This will:
+1.  **You Code**: Work in your Human Node.
+2.  **Agents React**: On every commit, DevSwarm spins up Agent Nodes.
+3.  **Parallel Execution**: While you continue coding, Agent 1 writes tests, Agent 2 reviews code.
+4.  **Loop Closed**: You use `ds apply` to merge the Agents' work back into your branch when you are ready.
 
-1. Detect your OS and Architecture.
-2. Download the latest binary from [GitHub Releases](https://github.com/markshao/DevSwarm/releases).
-3. Install `ds` to `/usr/local/bin`.
-4. Configure autocompletion for your shell (Zsh/Bash).
+---
 
-## 🎮 Playground (Try it out!)
+## 🚀 Quick Start
 
-DevSwarm comes with an automated **End-to-End (E2E) Test Script** that simulates a full user workflow. This is the best way to understand how DevSwarm works without polluting your environment.
+### Installation
 
 ```bash
-# Run the E2E test script
-./playground/test_e2e.sh
+git clone https://github.com/bytedance/DevSwarm.git
+cd DevSwarm
+go build -o bin/devswarm main.go
+export PATH=$PWD/bin:$PATH
 ```
 
-This script will:
+See [Installation Guide](user-guide/installation.md) for details.
 
-- Initialize a workspace.
-- Spawn a node.
-- Simulate coding work.
-- Merge changes back.
-- Clean up resources.
+### Usage
 
-## 🛠 Usage Guide
-
-### 1. Initialize Workspace
-
-Create a DevSwarm workspace for a Git repository.
-
+#### 1. Initialize
 ```bash
-# Automatically creates 'repo_workspace' directory (e.g. DevSwarm_workspace)
-ds init https://github.com/markshao/DevSwarm.git
-
-# Or specify a custom directory name
-ds init https://github.com/markshao/DevSwarm.git my_custom_workspace
+mkdir myproject_swarm && cd myproject_swarm
+ds init https://github.com/user/repo.git
 ```
 
-> **Note**: All subsequent commands must be run inside the workspace directory.
-
-### 2. Spawn Nodes
-
-Create isolated nodes for concurrent tasks. `ds` supports two modes:
-
-#### Feature Mode (Default)
-
-Directly work on a feature branch. Best for developing new features.
-
+#### 2. Start Coding (Human Node)
 ```bash
-# Work directly on 'feature/login'. Creates it from 'main' if missing.
-ds spawn feature/login login-dev --base main --purpose coding
-```
+# Create a node for your feature
+ds spawn feature/login login-dev
 
-#### Shadow Mode (--shadow)
-
-Creates a temporary shadow branch (`ds-shadow/...`) based on the target branch. Best for code reviews, testing, or experimental changes without polluting the branch.
-
-```bash
-# Create a review node based on 'feature/login' without checking out the branch itself
-ds spawn feature/login login-review --shadow --purpose review
-```
-
-### 3. Enter Node (Tmux)
-
-Jump into the isolated development environment (Tmux Session) of a node.
-
-```bash
+# Enter the isolated environment
 ds enter login-dev
 ```
 
-_You are now inside a Tmux session. The working directory is `workspaces/login-dev`. Use `Ctrl+b, d` to detach._
-
-### 4. List Nodes
-
-Check the status of all active nodes.
+#### 3. Agent Collaboration
+When you commit code in `login-dev`, a workflow starts automatically.
 
 ```bash
-ds ls
+# Check agent status
+ds workflow ls
+
+# Inspect what the agent did
+ds workflow inspect <run-id>
+
+# Merge agent's changes back to your node
+ds apply login-dev
 ```
 
-_Output:_
+---
 
-```text
-NODE          BRANCH         PURPOSE      SESSION   CREATED
-login-dev     feature/login  coding       RUNNING   2023-10-27T10:00:00Z
-login-test    feature/login  testing      STOPPED   2023-10-27T10:05:00Z
-```
+## 📚 Documentation
 
-### 5. Merge Node
+- [**Installation Guide**](user-guide/installation.md): Requirements and setup.
+- [**Human Node Guide**](user-guide/human-node.md): Managing your workspace and VSCode integration.
+- [**Agentic Workflow Guide**](user-guide/workflow.md): Configuring agents, triggers, and the apply loop.
 
-Merge the changes from a node (Shadow Branch) back to the main Logical Branch.
+---
 
-```bash
-# Squash merge and keep the node
-ds merge login-dev
+## 🛠 Tech Stack
 
-# Squash merge and automatically remove the node
-ds merge login-dev --cleanup
-```
+- **Golang**: Core logic and CLI (Cobra).
+- **Git Worktree**: File system isolation.
+- **Tmux**: Process and session isolation.
+- **Qwen**: The AI engine powering the automation.
 
-### 6. Remove Node
+## License
 
-Manually remove a node and release all resources (Worktree, Branch, Session).
-
-```bash
-ds rm login-test
-```
-
-## 💻 IDE Integration (Trae / VS Code)
-
-DevSwarm provides deep integration with modern IDEs to enhance your workflow.
-
-### 1. Workspace Integration (Recommended)
-
-DevSwarm automatically generates and maintains a standard `.code-workspace` file. Importing this allows you to edit files across multiple nodes simultaneously within a single IDE window, with full language server support.
-
-**Using Trae IDE:**
-
-1. **Import Workspace**:
-   - Use **File** -> **Open Workspace...** to load the configuration.
-   - Select the `{project}.code-workspace` file generated in the root directory.
-   - Trae will recognize the multi-root structure and index all nodes.
-
-2. **AI Context**:
-   - By opening the workspace, Trae's AI can access context from all active nodes, allowing for cross-node refactoring and understanding.
-
-_(Note: VS Code users can also open the same `.code-workspace` file via **File** -> **Open Workspace from File...**)_
-
-### 2. Terminal Integration
-
-DevSwarm can automatically attach your IDE terminal to the correct Node's Tmux session based on the file you are currently editing.
-
-**Setup Instructions:**
-
-1. Open your IDE's `settings.json`.
-2. Add or replace the following configuration:
-
-```json
-  "terminal.integrated.env.osx": {
-    "CURRENT_FILE": "${file}"
-  },
-  "terminal.integrated.profiles.osx": {
-    "devswarm-tmux": {
-      "path": "/usr/local/bin/ds",
-      "args": ["auto-attach", "${env:CURRENT_FILE}"],
-      "icon": "terminal-tmux",
-      "cwd": "${fileDirname}"
-    }
-  },
-  "terminal.integrated.defaultProfile.osx": "devswarm-tmux"
-```
-
-> **Note**: We use the `CURRENT_FILE` environment variable because argument expansion (`${file}`) can sometimes behave inconsistently in certain contexts.
-
-**How it works:**
-
-- When you open a terminal (`Ctrl + ~`), DevSwarm detects if the active file (passed via `CURRENT_FILE`) belongs to a specific **Node**.
-- If it does, you are automatically attached to that node's **Tmux session**.
-- If not, you are attached to a **default** session.
-
-## 🏗 Architecture
-
-- **Main Repo**: The single source of truth (Git repository).
-- **Workspaces**: Ephemeral worktrees derived from the repo.
-- **State**: A `state.json` file tracks the mapping between Nodes, Tmux sessions, and Git branches.
-
-```text
-my_project_swarm/
-├── .devswarm/
-│   └── state.json
-├── main_repo/           # Main .git repository
-├── workspaces/          # Active nodes
-│   ├── login-human/     # Worktree A
-│   └── login-test/      # Worktree B
-└── my_project.code-workspace # VSCode workspace config
-```
-
-## 📝 License
-
-Apache-2.0 LICENSE
+Apache License 2.0

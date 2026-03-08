@@ -23,6 +23,15 @@ func NewSession(sessionName, cwd string) error {
 	return nil
 }
 
+// SendKeys sends keys to a tmux session.
+func SendKeys(sessionName, keys string) error {
+	cmd := exec.Command("tmux", "send-keys", "-t", sessionName, keys, "C-m")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to send keys to session %s: %s: %w", sessionName, string(output), err)
+	}
+	return nil
+}
+
 // AttachSession replaces the current process with tmux attach.
 // WARNING: This function does not return if successful!
 func AttachSession(sessionName string) error {
@@ -57,6 +66,19 @@ func EnsureAndAttach(sessionName, cwd string) error {
 // IsInsideTmux checks if the current process is running inside tmux.
 func IsInsideTmux() bool {
 	return os.Getenv("TMUX") != ""
+}
+
+// GetCurrentSessionName returns the name of the current tmux session.
+func GetCurrentSessionName() (string, error) {
+	if !IsInsideTmux() {
+		return "", fmt.Errorf("not inside tmux")
+	}
+	cmd := exec.Command("tmux", "display-message", "-p", "#S")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
 }
 
 // SwitchClient switches the current tmux client to another session.
