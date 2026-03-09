@@ -47,15 +47,19 @@ if curl -fsSL -o "$TMP_DIR/$ASSET_NAME" "$DOWNLOAD_URL"; then
         
         if [ "$SHELL_TYPE" == "zsh" ]; then
              # Zsh completion
-            COMPLETION_FILE="${HOME}/.orion_completion.zsh"
+            COMPLETION_DIR="${HOME}/.orion/completions"
+            mkdir -p "$COMPLETION_DIR"
+            COMPLETION_FILE="${COMPLETION_DIR}/_orion"
+            
             $BINARY completion zsh > "$COMPLETION_FILE"
             
             echo "Zsh completion script generated at $COMPLETION_FILE"
             echo "To enable autocompletion, add the following to your ~/.zshrc:"
             echo ""
-            echo "  source $COMPLETION_FILE"
+            echo "  fpath=($COMPLETION_DIR \$fpath)"
+            echo "  autoload -U compinit; compinit"
             echo ""
-            echo "Then restart your terminal or run 'source ~/.zshrc'."
+            echo "Then restart your terminal."
             
         elif [ "$SHELL_TYPE" == "bash" ]; then
              # Bash completion

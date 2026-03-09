@@ -3,7 +3,7 @@ package version
 var (
 	// Version is the current version of Orion.
 	// This should be set via ldflags during build.
-	Version = "v1.0.0-alpha.5"
+	Version = "v1.0.0-alpha.6"
 
 	// Commit is the git commit hash of the build.
 	// This should be set via ldflags during build.
