@@ -2,7 +2,7 @@
 
 set -e
 
-REPO="bytedance/Orion"
+REPO="markshao/orion"
 BINARY="orion"
 DEST="/usr/local/bin"
 

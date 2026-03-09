@@ -55,7 +55,7 @@ graph TD
 **一键安装 (推荐)**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bytedance/Orion/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/markshao/orion/main/install.sh | bash
 ```
 
 **手动安装**

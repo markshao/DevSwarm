@@ -56,7 +56,7 @@ graph TD
 **One-Click Install (Recommended)**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bytedance/Orion/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/markshao/orion/main/install.sh | bash
 ```
 
 **Manual Install**
