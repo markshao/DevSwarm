@@ -1,10 +1,10 @@
 version: 2
-project_name: ds
+project_name: orion
 
 builds:
   - env:
       - CGO_ENABLED=0
-    binary: ds
+    binary: orion
     goos:
       - linux
       - darwin
@@ -20,13 +20,11 @@ builds:
 archives:
   - format: tar.gz
     # Use a standard naming convention to make it easy for install.sh to guess the URL
-    # e.g., ds_Darwin_arm64.tar.gz
+    # e.g., orion_darwin_arm64.tar.gz
     name_template: >-
       {{ .ProjectName }}_
-      {{- title .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{- else }}{{ .Arch }}{{ end }}
+      {{- .Os }}_
+      {{- .Arch }}
 
 checksum:
   name_template: 'checksums.txt'
