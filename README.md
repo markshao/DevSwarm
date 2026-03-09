@@ -1,11 +1,15 @@
-# DevSwarm: AI-Native Development Environment Manager
+# Orion: AI-Native Development Environment Manager
 
 [![Go Version](https://img.shields.io/badge/go-1.21+-blue.svg)](https://golang.org/dl/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 [**English**](README.md) | [**简体中文**](README_zh-CN.md)
 
-**DevSwarm** is a CLI tool designed for the **Agentic DevOps** era. It virtualizes your local development environment, allowing you to collaborate with AI Agents as if they were teammates sitting next to you.
+**Orion** is a CLI tool designed for the **Agentic DevOps** era. It virtualizes your local development environment, allowing you to collaborate with AI Agents as if they were teammates sitting next to you.
+
+## 🌌 Why "Orion"?
+
+**Orion** is a navigation system for AI agents. The name symbolizes how **Orion orchestrates agents across your codebase**, guiding them through complex development tasks like the constellation guides a navigator.
 
 ---
 
@@ -13,13 +17,13 @@
 
 Traditional DevOps relies on remote CI/CD pipelines—slow, stateless, and disconnected from your IDE. 
 
-**DevSwarm brings the pipeline to your local machine.** It introduces the concept of **Nodes**:
+**Orion brings the pipeline to your local machine.** It introduces the concept of **Nodes**:
 *   **Human Node**: Your dedicated workspace (Git Worktree + Tmux Session).
 *   **Agentic Node**: An ephemeral workspace where AI Agents running in the background can write code, run tests, and fix bugs *concurrently* with you.
 
 ### The "Chain of Branch" Workflow
 
-Instead of blocking your work, DevSwarm orchestrates a chain of **Shadow Branches**:
+Instead of blocking your work, Orion orchestrates a chain of **Shadow Branches**:
 
 ```mermaid
 graph TD
@@ -33,14 +37,14 @@ graph TD
     
     AgentNode2 -->|4. Ready| FinalState(Finished Run)
     
-    User -->|5. ds apply| FinalState
+    User -->|5. orion apply| FinalState
     FinalState -- Merge Back --> HumanNode
 ```
 
 1.  **You Code**: Work in your Human Node.
-2.  **Agents React**: On every commit, DevSwarm spins up Agent Nodes.
+2.  **Agents React**: On every commit, Orion spins up Agent Nodes.
 3.  **Parallel Execution**: While you continue coding, Agent 1 writes tests, Agent 2 reviews code.
-4.  **Loop Closed**: You use `ds apply` to merge the Agents' work back into your branch when you are ready.
+4.  **Loop Closed**: You use `orion apply` to merge the Agents' work back into your branch when you are ready.
 
 ---
 
@@ -51,7 +55,7 @@ graph TD
 **One-Click Install (Recommended)**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bytedance/DevSwarm/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/bytedance/Orion/main/install.sh | bash
 ```
 
 **Manual Install**
@@ -63,16 +67,16 @@ See [Installation Guide](user-guide/installation.md) for building from source.
 #### 1. Initialize
 ```bash
 mkdir myproject_swarm && cd myproject_swarm
-ds init https://github.com/user/repo.git
+orion init https://github.com/user/repo.git
 ```
 
 #### 2. Start Coding (Human Node)
 ```bash
 # Create a node for your feature
-ds spawn feature/login login-dev
+orion spawn feature/login login-dev
 
 # Enter the isolated environment
-ds enter login-dev
+orion enter login-dev
 ```
 
 #### 3. Agent Collaboration
@@ -80,13 +84,13 @@ When you commit code in `login-dev`, a workflow starts automatically.
 
 ```bash
 # Check agent status
-ds workflow ls
+orion workflow ls
 
 # Inspect what the agent did
-ds workflow inspect <run-id>
+orion workflow inspect <run-id>
 
 # Merge agent's changes back to your node
-ds apply login-dev
+orion apply login-dev
 ```
 
 ---
