@@ -40,7 +40,6 @@ if curl -fsSL -o "$TMP_DIR/$ASSET_NAME" "$DOWNLOAD_URL"; then
         sudo mv "$TMP_DIR/$BINARY" "$DEST/$BINARY"
         chmod +x "$DEST/$BINARY"
         echo "Successfully installed $BINARY to $DEST/$BINARY"
-        $BINARY --version
 
         # Autocompletion setup
         echo "Setting up autocompletion..."
@@ -51,14 +50,12 @@ if curl -fsSL -o "$TMP_DIR/$ASSET_NAME" "$DOWNLOAD_URL"; then
             COMPLETION_FILE="${HOME}/.orion_completion.zsh"
             $BINARY completion zsh > "$COMPLETION_FILE"
             
-            if ! grep -q "source $COMPLETION_FILE" "${HOME}/.zshrc"; then
-                echo "" >> "${HOME}/.zshrc"
-                echo "# Orion autocompletion" >> "${HOME}/.zshrc"
-                echo "source $COMPLETION_FILE" >> "${HOME}/.zshrc"
-                echo "Added Zsh completion to ~/.zshrc. Please restart your terminal."
-            else
-                echo "Zsh completion already configured."
-            fi
+            echo "Zsh completion script generated at $COMPLETION_FILE"
+            echo "To enable autocompletion, add the following to your ~/.zshrc:"
+            echo ""
+            echo "  source $COMPLETION_FILE"
+            echo ""
+            echo "Then restart your terminal or run 'source ~/.zshrc'."
             
         elif [ "$SHELL_TYPE" == "bash" ]; then
              # Bash completion
@@ -70,14 +67,12 @@ if curl -fsSL -o "$TMP_DIR/$ASSET_NAME" "$DOWNLOAD_URL"; then
                 RC_FILE="${HOME}/.bash_profile"
             fi
             
-            if ! grep -q "source $COMPLETION_FILE" "$RC_FILE"; then
-                echo "" >> "$RC_FILE"
-                echo "# Orion autocompletion" >> "$RC_FILE"
-                echo "source $COMPLETION_FILE" >> "$RC_FILE"
-                echo "Added Bash completion to $RC_FILE. Please restart your terminal."
-            else
-                echo "Bash completion already configured."
-            fi
+            echo "Bash completion script generated at $COMPLETION_FILE"
+            echo "To enable autocompletion, add the following to your $RC_FILE:"
+            echo ""
+            echo "  source $COMPLETION_FILE"
+            echo ""
+            echo "Then restart your terminal or run 'source $RC_FILE'."
         else
             echo "Skipping autocompletion: unsupported shell '$SHELL_TYPE'. Manual setup required."
             echo "Run '$BINARY completion <shell>' to generate script."
