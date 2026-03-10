@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"text/tabwriter"
 	"time"
 
@@ -445,4 +446,85 @@ func init() {
 	workflowCmd.AddCommand(lsWorkflowCmd)
 	workflowCmd.AddCommand(inspectWorkflowCmd)
 	workflowCmd.AddCommand(enterWorkflowCmd)
+
+	workflowCmd.AddCommand(artifactsCmd)
+	artifactsCmd.AddCommand(lsArtifactsCmd)
+}
+
+// --- Artifacts Command ---
+
+var artifactsCmd = &cobra.Command{
+	Use:   "artifacts",
+	Short: "Manage workflow artifacts",
+}
+
+var lsArtifactsCmd = &cobra.Command{
+	Use:   "ls [run_id]",
+	Short: "List artifacts for a workflow run",
+	Args:  cobra.MaximumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			color.Red("Error getting current directory: %v", err)
+			os.Exit(1)
+		}
+
+		rootPath, err := workspace.FindWorkspaceRoot(cwd)
+		if err != nil {
+			color.Red("Not in a Orion workspace: %v", err)
+			os.Exit(1)
+		}
+
+		wm, err := workspace.NewManager(rootPath)
+		if err != nil {
+			color.Red("Failed to load workspace: %v", err)
+			os.Exit(1)
+		}
+
+		var runID string
+		if len(args) > 0 {
+			runID = args[0]
+		} else {
+			var err error
+			runID, err = SelectWorkflowRun(wm)
+			if err != nil {
+				if err.Error() == "^C" {
+					return
+				}
+				color.Red("%v", err)
+				return
+			}
+		}
+
+		engine := workflow.NewEngine(wm)
+		run, err := engine.GetRun(runID)
+		if err != nil {
+			color.Red("Run '%s' not found.", runID)
+			os.Exit(1)
+		}
+
+		// List artifacts
+		fmt.Printf("Artifacts for run %s:\n", runID)
+		hasArtifacts := false
+		for _, step := range run.Steps {
+			// Artifact dir: .orion/runs/<runID>/artifacts/<stepID>
+			artifactDir := filepath.Join(wm.RootPath, workspace.MetaDir, workspace.RunsDir, runID, "artifacts", step.ID)
+			entries, err := os.ReadDir(artifactDir)
+			if err != nil || len(entries) == 0 {
+				continue
+			}
+
+			hasArtifacts = true
+			fmt.Printf("\n📂 Step: %s (%s)\n", step.ID, step.Agent)
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					fmt.Printf("  - %s\n", entry.Name())
+				}
+			}
+		}
+
+		if !hasArtifacts {
+			fmt.Println("  (No artifacts found)")
+		}
+	},
 }

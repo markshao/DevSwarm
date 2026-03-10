@@ -29,24 +29,17 @@ type State struct {
 
 // Config represents the .orion/config.yaml structure
 type Config struct {
-	Version   int               `yaml:"version"`
-	Workspace string            `yaml:"workspace"`
-	Git       GitConfig         `yaml:"git"`
-	Workflow  map[string]string `yaml:"workflow"`
-	Runtime   RuntimeConfig     `yaml:"runtime"`
-	Agents    AgentsConfig      `yaml:"agents"`
+	Version   int          `yaml:"version"`
+	Workspace string       `yaml:"workspace"`
+	Git       GitConfig    `yaml:"git"`
+	Agents    AgentsConfig `yaml:"agents"`
+	Workflow  map[string]string
+	Runtime   RuntimeConfig `yaml:"runtime"`
 }
 
 type AgentsConfig struct {
 	DefaultProvider string                      `yaml:"default_provider"`
 	Providers       map[string]ProviderSettings `yaml:"providers"`
-}
-
-type ProviderSettings struct {
-	APIKeyEnv string            `yaml:"api_key_env"`
-	Model     string            `yaml:"model"`
-	Endpoint  string            `yaml:"endpoint"`
-	Params    map[string]string `yaml:"params"`
 }
 
 type GitConfig struct {
@@ -80,15 +73,23 @@ type PipelineStep struct {
 
 // Agent represents an agent definition (e.g. agents/ut-agent.yaml)
 type Agent struct {
-	Name         string       `yaml:"name"`
-	BaseTemplate string       `yaml:"base_template"` // e.g. "default"
-	Runtime      AgentRuntime `yaml:"runtime"`
-	Prompt       string       `yaml:"prompt"`
-	Env          []string     `yaml:"env"`
+	Name    string       `yaml:"name"`
+	Runtime AgentRuntime `yaml:"runtime"`
+	Prompt  string       `yaml:"prompt"`
+	Env     []string     `yaml:"env"`
 }
 
 type AgentRuntime struct {
-	Provider string            `yaml:"provider"` // e.g. "qwen"
-	Model    string            `yaml:"model"`    // e.g. "qwen-max"
-	Params   map[string]string `yaml:"params"`   // Provider-specific params
+	Provider string            `yaml:"provider"`
+	Model    string            `yaml:"model"`
+	Params   map[string]string `yaml:"params"`
+	Command  string            `yaml:"command"` // Override or specific command
+}
+
+type ProviderSettings struct {
+	APIKeyEnv string            `yaml:"api_key_env"`
+	Model     string            `yaml:"model"`
+	Endpoint  string            `yaml:"endpoint"`
+	Command   string            `yaml:"command"` // Custom command template, e.g. 'coco -py "{{.PromptFile}}"'
+	Params    map[string]string `yaml:"params"`
 }

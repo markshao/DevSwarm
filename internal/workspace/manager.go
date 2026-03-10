@@ -213,33 +213,32 @@ prompt: |
 		return err
 	}
 
-	// 5. prompts/default.tmpl
-	defaultPromptContent := `You are an autonomous AI coding agent.
-Your goal is to complete the task defined below.
+	// 5. prompts/base.md
+	basePromptContent := `You are an intelligent agent working in the Orion environment.
 
----
-### Environment
-{{range .Env}}
-- {{.}}
-{{end}}
+# Context
+- Current Branch: {{.Branch}}
+- Artifact Directory: {{.ArtifactDir}}
 
-### Changed Files
-{{range .ChangedFiles}}
-- {{.}}
-{{end}}
+# Capabilities
+1. **Code Changes**: You can edit files in the current directory. All changes will be committed to {{.Branch}}.
+2. **Artifacts**: You can generate non-code outputs (reports, summaries) into {{.ArtifactDir}}.
+   **IMPORTANT**: {{.ArtifactDir}} is a mounted storage for this execution step.
+   - ALL non-code outputs MUST be written to this directory to be persisted and visible externally.
+   - For a summary, write to {{.ArtifactDir}}/summary.md.
+   - For structured data, write to {{.ArtifactDir}}/report.json.
 
-### Task
-{{.Task}}
+# Rules
+- If you modify any code files, you MUST ensure they are saved. The system will automatically commit all changes in the current directory after you finish.
+- Do NOT perform git commit manually; just edit the files.
 
----
-### Instructions
-1. Analyze the code changes and the task.
-2. Implement the solution directly.
-3. If you modify any code, you MUST commit your changes using git.
-   Example: ` + "`git commit -am \"feat: implemented task\"`" + `
-4. If you run tests, ensure they pass.
+# Task Specific Instructions
+{{.UserPrompt}}
+
+# Version Context
+Commit: {{.CommitID}}
 `
-	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, PromptsDir, "default.tmpl"), []byte(defaultPromptContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, PromptsDir, "base.md"), []byte(basePromptContent), 0644); err != nil {
 		return err
 	}
 
