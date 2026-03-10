@@ -34,6 +34,19 @@ type Config struct {
 	Git       GitConfig         `yaml:"git"`
 	Workflow  map[string]string `yaml:"workflow"`
 	Runtime   RuntimeConfig     `yaml:"runtime"`
+	Agents    AgentsConfig      `yaml:"agents"`
+}
+
+type AgentsConfig struct {
+	DefaultProvider string                      `yaml:"default_provider"`
+	Providers       map[string]ProviderSettings `yaml:"providers"`
+}
+
+type ProviderSettings struct {
+	APIKeyEnv string            `yaml:"api_key_env"`
+	Model     string            `yaml:"model"`
+	Endpoint  string            `yaml:"endpoint"`
+	Params    map[string]string `yaml:"params"`
 }
 
 type GitConfig struct {
@@ -67,13 +80,15 @@ type PipelineStep struct {
 
 // Agent represents an agent definition (e.g. agents/ut-agent.yaml)
 type Agent struct {
-	Name    string       `yaml:"name"`
-	Runtime AgentRuntime `yaml:"runtime"`
-	Prompt  string       `yaml:"prompt"`
-	Env     []string     `yaml:"env"`
+	Name         string       `yaml:"name"`
+	BaseTemplate string       `yaml:"base_template"` // e.g. "default"
+	Runtime      AgentRuntime `yaml:"runtime"`
+	Prompt       string       `yaml:"prompt"`
+	Env          []string     `yaml:"env"`
 }
 
 type AgentRuntime struct {
-	Executor  string `yaml:"executor"`
-	CodeAgent string `yaml:"code-agent"`
+	Provider string            `yaml:"provider"` // e.g. "qwen"
+	Model    string            `yaml:"model"`    // e.g. "qwen-max"
+	Params   map[string]string `yaml:"params"`   // Provider-specific params
 }

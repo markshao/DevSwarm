@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"text/template"
 	"time"
 
+	"orion/internal/agent"
 	"orion/internal/git"
 	"orion/internal/tmux"
 	"orion/internal/types"
@@ -140,49 +142,20 @@ func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.Pipeline
 	}
 
 	// 2. Define Shadow Branch
-	// Naming: orion/<run-id>/<step-id>
 	shadowBranch := fmt.Sprintf("orion/%s/%s", run.ID, step.ID)
 	step.ShadowBranch = shadowBranch
 
-	// 3. Spawn Node (Worktree + Shadow Branch + Tmux)
+	// 3. Spawn Node
 	node, err := e.spawnAgentNode(step.NodeName, shadowBranch, baseBranch, run.ID)
 	if err != nil {
 		return fmt.Errorf("failed to spawn node: %w", err)
 	}
 
-	// 4. Setup Git Identity for the Node
-	// Strategy:
-	// 1. Try to get identity from config.yaml
-	// 2. If missing, try to get from main repo (fallback)
-	// 3. Apply to node worktree
-
+	// 4. Load Config
 	config, err := e.wm.GetConfig()
-	userName := ""
-	userEmail := ""
-
-	if err == nil {
-		userName = config.Git.User
-		userEmail = config.Git.Email
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
 	}
-
-	// Fallback to main repo config if missing
-	if userName == "" {
-		userName, _ = git.GetConfig(e.wm.State.RepoPath, "user.name")
-	}
-	if userEmail == "" {
-		userEmail, _ = git.GetConfig(e.wm.State.RepoPath, "user.email")
-	}
-
-	// Apply identity
-	if userName == "" {
-		userName = "ds_agent"
-	}
-	if userEmail == "" {
-		userEmail = "ds_agent@orion.local"
-	}
-
-	_ = git.SetConfig(node.WorktreePath, "user.name", userName)
-	_ = git.SetConfig(node.WorktreePath, "user.email", userEmail)
 
 	// 5. Load Agent Configuration
 	agentPath := filepath.Join(e.wm.RootPath, workspace.MetaDir, workspace.AgentsDir, stepDef.Agent+".yaml")
@@ -190,87 +163,131 @@ func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.Pipeline
 	if err != nil {
 		return fmt.Errorf("failed to load agent config %s: %w", stepDef.Agent, err)
 	}
-	var agent types.Agent
-	if err := yaml.Unmarshal(agentData, &agent); err != nil {
+	var agentDef types.Agent
+	if err := yaml.Unmarshal(agentData, &agentDef); err != nil {
 		return fmt.Errorf("failed to parse agent config: %w", err)
 	}
 
-	// 6. Load and Render Prompt
-	promptPath := filepath.Join(e.wm.RootPath, workspace.MetaDir, workspace.PromptsDir, agent.Prompt)
-	promptContent, err := os.ReadFile(promptPath)
-	if err != nil {
-		return fmt.Errorf("failed to load prompt %s: %w", agent.Prompt, err)
+	// 6. Determine Provider
+	providerName := agentDef.Runtime.Provider
+	if providerName == "" {
+		providerName = config.Agents.DefaultProvider
+	}
+	if providerName == "" {
+		providerName = "qwen" // Fallback
 	}
 
-	// Get Diff Context (from base branch to HEAD of shadow branch - which is same as base initially)
-	// Actually, we want the diff of the *previous step* or the *human commit*.
-	// git diff baseBranch~1 baseBranch
-	diffContext, err := e.getDiffContext(node.WorktreePath, "HEAD~1", "HEAD")
-	if err != nil {
-		// If HEAD~1 fails (e.g. initial commit), try empty
-		diffContext = ""
-	}
+	providerSettings := config.Agents.Providers[providerName]
 
-	renderedPrompt, err := e.renderPrompt(string(promptContent), map[string]string{
-		"Branch": shadowBranch,
-		"Diff":   diffContext,
+	// Create Provider
+	prov, err := agent.NewProvider(agent.Config{
+		Provider: providerName,
+		Model:    agentDef.Runtime.Model, // Agent specific model overrides provider default?
+		// Actually agentDef.Runtime.Model should take precedence if set,
+		// or use providerSettings.Model
+		APIKey:   os.Getenv(providerSettings.APIKeyEnv),
+		Endpoint: providerSettings.Endpoint,
+		Params:   providerSettings.Params,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to create agent provider: %w", err)
+	}
+
+	// Use model from agent definition if present, else from provider settings
+	if agentDef.Runtime.Model == "" {
+		// This logic belongs inside the provider or we handle it here by passing the right config
+		// But agent.NewProvider takes agent.Config which has Model field.
+		// Let's ensure we pass the right model.
+		if providerSettings.Model != "" {
+			// We need to re-create or update provider config?
+			// Simpler: Just pass the right model to NewProvider
+			// If agentDef has model, use it. Else use providerSettings.Model.
+		}
+	}
+	// Re-do provider creation with correct model logic
+	model := agentDef.Runtime.Model
+	if model == "" {
+		model = providerSettings.Model
+	}
+
+	prov, err = agent.NewProvider(agent.Config{
+		Provider: providerName,
+		Model:    model,
+		APIKey:   os.Getenv(providerSettings.APIKeyEnv),
+		Endpoint: providerSettings.Endpoint,
+		Params:   providerSettings.Params,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create agent provider: %w", err)
+	}
+
+	// 7. Prepare Prompt Context
+	// Get changed files
+	changedFiles, err := git.GetChangedFiles(node.WorktreePath, "HEAD~1", "HEAD")
+	if err != nil {
+		changedFiles = []string{}
+	}
+
+	promptCtx := agent.PromptContext{
+		Task: agentDef.Prompt, // The specific task from agent yaml
+		Env:  agentDef.Env,    // We should resolve env vars? Or just pass names?
+		// The template expects strings.
+		ChangedFiles: changedFiles,
+		BaseBranch:   baseBranch,
+	}
+
+	// Resolve Env vars if needed, or just pass the list as context
+	// The default template iterates over .Env, so let's pass the resolved values
+	var resolvedEnv []string
+	for _, envVar := range agentDef.Env {
+		val := os.Getenv(envVar)
+		if val != "" {
+			resolvedEnv = append(resolvedEnv, fmt.Sprintf("%s=%s", envVar, val))
+		} else {
+			resolvedEnv = append(resolvedEnv, envVar)
+		}
+	}
+	promptCtx.Env = resolvedEnv
+
+	// 8. Render Prompt
+	baseTemplate := agentDef.BaseTemplate
+	if baseTemplate == "" {
+		baseTemplate = "default"
+	}
+
+	finalPrompt, err := agent.RenderPrompt(e.wm.RootPath, baseTemplate, agentDef.Prompt, promptCtx)
 	if err != nil {
 		return fmt.Errorf("failed to render prompt: %w", err)
 	}
 
-	// Write prompt to file in worktree for agent to consume
-	promptFile := filepath.Join(node.WorktreePath, "agent_prompt.md")
-	if err := os.WriteFile(promptFile, []byte(renderedPrompt), 0644); err != nil {
-		return fmt.Errorf("failed to write prompt file: %w", err)
-	}
+	// 9. Execute Agent
+	// We run this inside the node's worktree
+	// Note: Our QwenProvider implementation currently just writes a file.
+	// In a real scenario, it might call an API.
 
-	// 7. Execute Agent Command
-	// Create a script to run the agent. This avoids long command echo in tmux and handles input piping.
-	// We read the prompt from the file (which contains the rendered content) instead of embedding it.
-	scriptContent := fmt.Sprintf(`#!/bin/sh
-# Read prompt from file to avoid shell escaping issues
-if [ -f "agent_prompt.md" ]; then
-    PROMPT=$(cat agent_prompt.md)
-else
-    echo "Error: agent_prompt.md not found" >&2
-    exit 1
-fi
-
-echo '1' | %s "$PROMPT" -py
-EXIT_CODE=$?
-echo $EXIT_CODE > .agent_exit_code
-exit $EXIT_CODE
-`, agent.Runtime.CodeAgent)
-
-	scriptPath := filepath.Join(node.WorktreePath, "run_agent.sh")
-	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
-		return fmt.Errorf("failed to write run script: %w", err)
-	}
-
-	// Ensure clean state: remove any existing exit code file
-	// This prevents race conditions if the file exists from a previous run or was checked out from git
-	_ = os.Remove(filepath.Join(node.WorktreePath, ".agent_exit_code"))
-
-	// We use the existing session created by spawnAgentNode
-	sessionName := fmt.Sprintf("orion-%s", step.NodeName)
-	if err := tmux.SendKeys(sessionName, "./run_agent.sh"); err != nil {
-		return fmt.Errorf("failed to send command to tmux: %w", err)
-	}
-
-	// Wait for completion (poll for .agent_exit_code)
-	exitCode, err := e.waitForAgent(node.WorktreePath)
+	output, err := prov.Run(context.Background(), finalPrompt, node.WorktreePath, resolvedEnv)
 	if err != nil {
-		return fmt.Errorf("agent execution error: %w", err)
-	}
-	if exitCode != 0 {
-		return fmt.Errorf("agent failed with exit code %d", exitCode)
+		return fmt.Errorf("agent execution failed: %w", err)
 	}
 
-	// 8. Commit Changes
-	// The agent modified files in the worktree. We commit them to the shadow branch.
-	if err := e.commitChanges(node.WorktreePath, fmt.Sprintf("Agent %s Result", step.ID)); err != nil {
-		return fmt.Errorf("failed to commit agent changes: %w", err)
+	// Log output (simulated logging)
+	// In production, we might write this to a log file or stream it.
+	_ = output
+
+	// 10. Commit Changes
+	// The agent should have modified files. We commit them.
+	// We need to check if there are changes first.
+	if hasChanges, _ := git.HasChanges(node.WorktreePath); hasChanges {
+		if err := e.commitChanges(node.WorktreePath, fmt.Sprintf("Agent %s Result", step.ID)); err != nil {
+			return fmt.Errorf("failed to commit agent changes: %w", err)
+		}
+	} else {
+		// If agent didn't commit (e.g. QwenProvider just wrote a file but didn't git add/commit),
+		// we might need to do it here if the instruction said "YOU MUST COMMIT".
+		// But if the agent follows instructions, it should have committed.
+		// For our mock QwenProvider, it creates a file but doesn't commit.
+		// So let's force commit here for safety in this prototype.
+		_ = e.commitChanges(node.WorktreePath, fmt.Sprintf("Agent %s Result (Auto-commit)", step.ID))
 	}
 
 	return nil

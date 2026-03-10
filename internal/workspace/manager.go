@@ -13,8 +13,6 @@ import (
 	"orion/internal/tmux"
 	"orion/internal/types"
 	"orion/internal/vscode"
-
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -134,20 +132,6 @@ func Init(rootPath, repoURL string) (*WorkspaceManager, error) {
 	return wm, nil
 }
 
-// GetConfig loads the .orion/config.yaml
-func (wm *WorkspaceManager) GetConfig() (*types.Config, error) {
-	configPath := filepath.Join(wm.RootPath, MetaDir, ConfigFile)
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, err
-	}
-	var config types.Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, err
-	}
-	return &config, nil
-}
-
 // generateV1Configs generates default V1 configuration files
 func (wm *WorkspaceManager) generateV1Configs() error {
 	// 1. config.yaml
@@ -163,6 +147,13 @@ workflow:
 
 runtime:
   artifact_dir: .orion/runs
+
+agents:
+  default_provider: qwen
+  providers:
+    qwen:
+      model: qwen-max
+      api_key_env: QWEN_API_KEY
 `
 	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, ConfigFile), []byte(configContent), 0644); err != nil {
 		return err
@@ -192,18 +183,15 @@ pipeline:
 
 	// 3. agents/ut-agent.yaml
 	utAgentContent := `name: ut-agent
+base_template: default
 
 runtime:
-  executor: tmux
-  code-agent: qwen
+  provider: qwen
+  model: qwen-max
 
-prompt: ut.md
-
-env:
-  - DEVSWARM_RUN_ID
-  - DEVSWARM_AGENT_BRANCH
-  - DEVSWARM_HUMAN_BRANCH
-  - DEVSWARM_ARTIFACT_DIR
+prompt: |
+  Review the code changes and write unit tests for the modified functions.
+  Ensure high coverage and edge case handling.
 `
 	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, AgentsDir, "ut-agent.yaml"), []byte(utAgentContent), 0644); err != nil {
 		return err
@@ -211,62 +199,47 @@ env:
 
 	// 4. agents/cr-agent.yaml
 	crAgentContent := `name: cr-agent
+base_template: default
 
 runtime:
-  executor: tmux
-  code-agent: qwen
+  provider: qwen
+  model: qwen-max
 
-prompt: cr.md
-
-env:
-  - DEVSWARM_RUN_ID
-  - DEVSWARM_AGENT_BRANCH
-  - DEVSWARM_HUMAN_BRANCH
-  - DEVSWARM_ARTIFACT_DIR
+prompt: |
+  Review the code changes and provide constructive feedback.
+  Focus on performance, security, and readability.
 `
 	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, AgentsDir, "cr-agent.yaml"), []byte(crAgentContent), 0644); err != nil {
 		return err
 	}
 
-	// 5. prompts/ut.md
-	utPromptContent := `# Unit Test Generation
+	// 5. prompts/default.tmpl
+	defaultPromptContent := `You are an autonomous AI coding agent.
+Your goal is to complete the task defined below.
 
-You are an expert software engineer.
-Your task is to analyze the code changes provided below and **immediately generate and write unit tests** for them.
+---
+### Environment
+{{range .Env}}
+- {{.}}
+{{end}}
 
-**INSTRUCTIONS:**
-1. Analyze the Diff to understand what changed.
-2. Identify the corresponding test file (create one if it doesn't exist).
-3. **USE YOUR FILE EDITING TOOLS IMMEDIATELY** to write the test code.
-4. **DO NOT ASK QUESTIONS.**
-5. **DO NOT EXPLAIN THE PLAN.**
-6. **DO NOT OUTPUT CODE BLOCKS IN THE CHAT.**
-7. JUST EDIT THE FILES.
+### Changed Files
+{{range .ChangedFiles}}
+- {{.}}
+{{end}}
 
-**Context:**
-- Branch: {{.Branch}}
-- Diff:
-{{.Diff}}
+### Task
+{{.Task}}
+
+---
+### Instructions
+1. Analyze the code changes and the task.
+2. Implement the solution directly.
+3. If you modify any code, you MUST commit your changes using git.
+   Example: ` + "`git commit -am \"feat: implemented task\"`" + `
+4. If you run tests, ensure they pass.
 `
-	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, PromptsDir, "ut.md"), []byte(utPromptContent), 0644); err != nil {
-		return err
-	}
-
-	// 6. prompts/cr.md
-	crPromptContent := `# Code Review
-
-You are a senior code reviewer.
-Your task is to review the code changes and provide constructive feedback.
-
-IMPORTANT:
-- Do not ask for confirmation.
-- Directly output your review.
-
-Context:
-- Branch: {{.Branch}}
-- Diff: {{.Diff}}
-`
-	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, PromptsDir, "cr.md"), []byte(crPromptContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, PromptsDir, "default.tmpl"), []byte(defaultPromptContent), 0644); err != nil {
 		return err
 	}
 
