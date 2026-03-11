@@ -22,25 +22,16 @@ Traditional DevOps relies on remote CI/CD pipelines—slow, stateless, and disco
 - **Human Node**: Your dedicated workspace (Git Worktree + Tmux Session).
 - **Agentic Node**: An ephemeral workspace where AI Agents running in the background can write code, run tests, and fix bugs _concurrently_ with you.
 
-### The "Chain of Branch" Workflow
+### Local Agentic DevOps
 
-Instead of blocking your work, Orion orchestrates a chain of **Shadow Branches**:
+Local Agentic DevOps means **bringing CI-like automation onto your local machine**, with AI agents running as first-class teammates:
 
-```mermaid
-graph TD
-    User((User)) -->|1. Commit| HumanNode["Human Node<br/>(feature/login)"]
-    HumanNode -->|2. Trigger| Workflow{Workflow Engine}
+- **Human Node**: you code in an isolated worktree + tmux session and commit normally.
+- **Local Pipeline**: the commit triggers a workflow pipeline.
+- **Agentic Nodes**: each pipeline step runs in its own isolated worktree + tmux session on a shadow branch.
+- **Apply Loop**: when the workflow is successful, you apply/merge the workflow result back onto your Human Node branch.
 
-    subgraph "Agentic Workflow (Local)"
-        Workflow -->|3. Spawn| AgentNode1["Agent: Unit Test<br/>(shadow/ut)"]
-        AgentNode1 -- Fixes & Commits --> AgentNode2["Agent: Code Review<br/>(shadow/cr)"]
-    end
-
-    AgentNode2 -->|4. Ready| FinalState(Finished Run)
-
-    User -->|5. orion apply| FinalState
-    FinalState -- Merge Back --> HumanNode
-```
+<img src="assets/diagrams/local-agentic-devops.png" alt="Local Agentic DevOps diagram" width="900" />
 
 1.  **You Code**: Work in your Human Node.
 2.  **Agents React**: On every commit, Orion spins up Agent Nodes.

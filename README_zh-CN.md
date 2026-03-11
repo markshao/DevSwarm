@@ -21,30 +21,16 @@
 *   **Human Node (人类节点)**: 你的专属工作区 (Git Worktree + Tmux Session)。
 *   **Agentic Node (智能体节点)**: 一个临时的后台工作区，AI Agents 可以在其中与你 *并发* 地编写代码、运行测试和修复 Bug。
 
-### "Chain of Branch" 工作流
+### Local Agentic DevOps
 
-Orion 不会阻塞你的工作，而是编排一条 **Shadow Branch (影子分支)** 链：
+Local Agentic DevOps 的核心是：把 CI/流水线能力带到你的本地机器上，让 AI Agents 以“本地队友”的方式参与研发闭环：
 
-```mermaid
-graph TD
-    User((User)) -->|1. Commit| HumanNode["Human Node<br/>(feature/login)"]
-    HumanNode -->|2. Trigger| Workflow{Workflow Engine}
-    
-    subgraph "Agentic Workflow (Local)"
-        Workflow -->|3. Spawn| AgentNode1["Agent: Unit Test<br/>(shadow/ut)"]
-        AgentNode1 -- Fixes & Commits --> AgentNode2["Agent: Code Review<br/>(shadow/cr)"]
-    end
-    
-    AgentNode2 -->|4. Ready| FinalState(Finished Run)
-    
-    User -->|5. orion apply| FinalState
-    FinalState -- Merge Back --> HumanNode
-```
+- **Human Node（人类节点）**：你在隔离的 worktree + tmux session 里正常开发与 commit。
+- **Local Pipeline（本地流水线）**：commit 触发 workflow pipeline。
+- **Agentic Nodes（智能体节点）**：流水线里的每个 step 都会启动一个独立的 worktree + tmux session，并在对应的 shadow branch 上执行任务。
+- **Apply Loop（回归闭环）**：workflow 成功后，通过 `orion apply` 将 workflow 的结果分支合并回 Human Node 的分支。
 
-1.  **你编码**: 在 Human Node 中工作。
-2.  **Agent 响应**: 每次提交都会自动触发 Agent Node。
-3.  **并行执行**: 当你继续编码时，Agent 1 编写测试，Agent 2 审查代码。
-4.  **闭环**: 当你准备好时，使用 `orion apply` 将 Agent 的成果合并回你的分支。
+<img src="assets/diagrams/local-agentic-devops.png" alt="Local Agentic DevOps diagram" width="900" />
 
 ---
 
