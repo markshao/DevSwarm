@@ -91,9 +91,12 @@ func TestStartRun(t *testing.T) {
 	agentPath := filepath.Join(rootPath, workspace.MetaDir, workspace.AgentsDir)
 	os.MkdirAll(agentPath, 0755)
 	agentConfig := types.Agent{
-		Name:    "test-model", // Use Name instead of Model
-		Prompt:  "test.md",
-		Runtime: types.AgentRuntime{CodeAgent: "echo"},
+		Name:   "test-agent",
+		Prompt: "test.md",
+		Runtime: types.AgentRuntime{
+			Provider: "test-provider",
+			Model:    "test-model",
+		},
 	}
 	agentData, _ := yaml.Marshal(agentConfig)
 	os.WriteFile(filepath.Join(agentPath, "test-agent.yaml"), agentData, 0644)
