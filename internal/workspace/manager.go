@@ -149,11 +149,12 @@ runtime:
   artifact_dir: .orion/runs
 
 agents:
-  default_provider: qwen
+  default_provider: traecli
   providers:
+    traecli:
+      command: 'traecli "{{.Prompt}}" -py'
     qwen:
-      model: qwen-max
-      api_key_env: QWEN_API_KEY
+      command: 'traecli "{{.Prompt}}" -y'
 `
 	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, ConfigFile), []byte(configContent), 0644); err != nil {
 		return err
