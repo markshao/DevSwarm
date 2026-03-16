@@ -434,14 +434,92 @@ var enterWorkflowCmd = &cobra.Command{
 	},
 }
 
+var rmWorkflowCmd = &cobra.Command{
+	Use:   "rm [run_id]",
+	Short: "Remove a workflow run",
+	Long: `Removes a workflow run and cleans up its resources.
+If the run has active agentic nodes, removal will be blocked unless --force is used.`,
+	Args: cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		runID := args[0]
+
+		force, _ := cmd.Flags().GetBool("force")
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			color.Red("Error getting current directory: %v", err)
+			os.Exit(1)
+		}
+
+		rootPath, err := workspace.FindWorkspaceRoot(cwd)
+		if err != nil {
+			color.Red("Not in a Orion workspace: %v", err)
+			os.Exit(1)
+		}
+
+		wm, err := workspace.NewManager(rootPath)
+		if err != nil {
+			color.Red("Failed to load workspace: %v", err)
+			os.Exit(1)
+		}
+
+		// Get the run
+		engine := workflow.NewEngine(wm)
+		run, err := engine.GetRun(runID)
+		if err != nil {
+			color.Red("Run '%s' not found.", runID)
+			os.Exit(1)
+		}
+
+		// Check if run is still running
+		if run.Status == workflow.StatusRunning {
+			if !force {
+				color.Red("Cannot remove run '%s': it is still running.", runID)
+				fmt.Println("\nUse --force to remove the run and all its agentic nodes.")
+				os.Exit(1)
+			}
+			color.Yellow("Force mode enabled. Run '%s' is still running.", runID)
+		}
+
+		// Find and remove all agentic nodes created by this run
+		var nodesRemoved int
+		for nodeName, node := range wm.State.Nodes {
+			if node.CreatedBy == runID {
+				color.Yellow("Removing agentic node: %s", nodeName)
+				if err := wm.RemoveNode(nodeName); err != nil {
+					color.Red("  Failed to remove node '%s': %v", nodeName, err)
+				} else {
+					color.Green("  Node '%s' removed.", nodeName)
+					nodesRemoved++
+				}
+			}
+		}
+
+		if nodesRemoved > 0 {
+			fmt.Printf("\nRemoved %d agentic node(s).\n", nodesRemoved)
+		}
+
+		// Remove the run directory
+		runDir := filepath.Join(wm.RootPath, workspace.MetaDir, workspace.RunsDir, runID)
+		if err := os.RemoveAll(runDir); err != nil {
+			color.Red("Failed to remove run directory: %v", err)
+			os.Exit(1)
+		}
+
+		color.Green("✅ Run '%s' removed successfully.", runID)
+	},
+}
+
 func init() {
 	runWorkflowCmd.Flags().StringP("trigger", "t", "manual", "Trigger type (e.g. manual, push)")
+	rmWorkflowCmd.Flags().BoolP("force", "f", false, "Force remove run and all its agentic nodes")
 
 	rootCmd.AddCommand(workflowCmd)
 	workflowCmd.AddCommand(runWorkflowCmd)
 	workflowCmd.AddCommand(lsWorkflowCmd)
 	workflowCmd.AddCommand(inspectWorkflowCmd)
 	workflowCmd.AddCommand(enterWorkflowCmd)
+	workflowCmd.AddCommand(rmWorkflowCmd)
 
 	workflowCmd.AddCommand(artifactsCmd)
 	artifactsCmd.AddCommand(lsArtifactsCmd)
