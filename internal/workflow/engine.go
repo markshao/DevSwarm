@@ -55,16 +55,6 @@ func (e *Engine) StartRun(workflowName, trigger, baseBranch, triggeredByNode str
 		}
 	}
 
-	// Capture trigger data if triggered by push
-	triggerData := ""
-	if trigger == "push" {
-		// Get current branch and latest commit info
-		hash, err := git.GetLatestCommitHash(e.wm.State.RepoPath)
-		if err == nil && len(hash) >= 7 {
-			triggerData = hash[:7] // Short hash
-		}
-	}
-
 	// 3. Create Run structure
 	runID := fmt.Sprintf("run-%s-%s", time.Now().Format("20060102"), uuid.New().String()[:8])
 	runDir := filepath.Join(e.wm.RootPath, workspace.MetaDir, workspace.RunsDir, runID)
@@ -76,7 +66,6 @@ func (e *Engine) StartRun(workflowName, trigger, baseBranch, triggeredByNode str
 		ID:              runID,
 		Workflow:        workflowName,
 		Trigger:         trigger,
-		TriggerData:     triggerData,
 		BaseBranch:      baseBranch,
 		TriggeredByNode: triggeredByNode,
 		Status:          StatusRunning, // Mark as running immediately
