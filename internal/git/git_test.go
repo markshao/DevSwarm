@@ -225,3 +225,111 @@ func TestGetCurrentBranch(t *testing.T) {
     }
 }
 
+func TestPushBranch(t *testing.T) {
+    // Setup: Create a local repo with a remote
+    remoteDir, err := os.MkdirTemp("", "orion-remote-test")
+    if err != nil {
+        t.Fatalf("failed to create temp remote dir: %v", err)
+    }
+    defer os.RemoveAll(remoteDir)
+
+    // Initialize bare remote repo
+    cmd := exec.Command("git", "init", "--bare", remoteDir)
+    if output, err := cmd.CombinedOutput(); err != nil {
+        t.Fatalf("failed to init bare repo: %v, output: %s", err, output)
+    }
+
+    // Create local repo
+    localDir, err := os.MkdirTemp("", "orion-local-test")
+    if err != nil {
+        t.Fatalf("failed to create temp local dir: %v", err)
+    }
+    defer os.RemoveAll(localDir)
+
+    cmd = exec.Command("git", "init", localDir)
+    if output, err := cmd.CombinedOutput(); err != nil {
+        t.Fatalf("failed to init local repo: %v, output: %s", err, output)
+    }
+
+    // Configure user
+    _ = exec.Command("git", "-C", localDir, "config", "user.email", "test@example.com").Run()
+    _ = exec.Command("git", "-C", localDir, "config", "user.name", "Test User").Run()
+
+    // Add remote
+    cmd = exec.Command("git", "-C", localDir, "remote", "add", "origin", remoteDir)
+    if err := cmd.Run(); err != nil {
+        t.Fatalf("failed to add remote: %v", err)
+    }
+
+    // Create initial commit on main
+    _ = exec.Command("git", "-C", localDir, "checkout", "-b", "main").Run()
+    readme := filepath.Join(localDir, "README.md")
+    if err := os.WriteFile(readme, []byte("# Test Repo"), 0644); err != nil {
+        t.Fatalf("failed to write file: %v", err)
+    }
+    _ = exec.Command("git", "-C", localDir, "add", ".").Run()
+    _ = exec.Command("git", "-C", localDir, "commit", "-m", "Initial commit").Run()
+
+    // Push main branch first
+    cmd = exec.Command("git", "-C", localDir, "push", "-u", "origin", "main")
+    if output, err := cmd.CombinedOutput(); err != nil {
+        t.Fatalf("failed to push main: %v, output: %s", err, output)
+    }
+
+    // Create a feature branch with a commit
+    _ = exec.Command("git", "-C", localDir, "checkout", "-b", "feature/test").Run()
+    featureFile := filepath.Join(localDir, "feature.txt")
+    if err := os.WriteFile(featureFile, []byte("feature content"), 0644); err != nil {
+        t.Fatalf("failed to write feature file: %v", err)
+    }
+    _ = exec.Command("git", "-C", localDir, "add", ".").Run()
+    _ = exec.Command("git", "-C", localDir, "commit", "-m", "Add feature").Run()
+
+    // Test PushBranch with --set-upstream to track the branch
+    if err := PushBranch(localDir, "feature/test"); err != nil {
+        t.Errorf("PushBranch failed: %v", err)
+    }
+
+    // Verify branch exists in remote by listing remote branches
+    cmd = exec.Command("git", "-C", localDir, "ls-remote", "--heads", "origin")
+    output, err := cmd.CombinedOutput()
+    if err != nil {
+        t.Fatalf("failed to list remote branches: %v, output: %s", err, output)
+    }
+
+    // Check if feature/test is in the output
+    if !containsSubstring(string(output), "feature/test") {
+        t.Errorf("feature/test branch not found in remote after PushBranch. Output: %s", string(output))
+    }
+}
+
+func TestPushBranchNonExistent(t *testing.T) {
+    repoPath, cleanup := setupTestRepo(t)
+    defer cleanup()
+
+    // Try to push non-existent branch
+    err := PushBranch(repoPath, "non-existent-branch")
+    if err == nil {
+        t.Error("expected error for non-existent branch, got nil")
+    }
+
+    // Error should mention the branch or push failure
+    if err != nil {
+        errMsg := err.Error()
+        if !containsSubstring(errMsg, "push") && !containsSubstring(errMsg, "non-existent-branch") {
+            t.Logf("error message: %s", errMsg)
+            // Accept any error from git push
+        }
+    }
+}
+
+// Helper function for substring check
+func containsSubstring(str, substr string) bool {
+    for i := 0; i <= len(str)-len(substr); i++ {
+        if str[i:i+len(substr)] == substr {
+            return true
+        }
+    }
+    return false
+}
+

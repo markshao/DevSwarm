@@ -449,3 +449,150 @@ func TestAppliedRunsPersistence(t *testing.T) {
 		t.Errorf("AppliedRuns content mismatch: %v", loadedNode.AppliedRuns)
 	}
 }
+
+func TestUpdateNodeStatus(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	nodeName := "test-node-status"
+	logicalBranch := "feature/status-test"
+
+	// 1. Spawn Node
+	err := wm.SpawnNode(nodeName, logicalBranch, "main", "Testing status update", true)
+	if err != nil {
+		t.Fatalf("SpawnNode failed: %v", err)
+	}
+
+	// 2. Verify initial status is StatusWorking
+	node := wm.State.Nodes[nodeName]
+	if node.Status != types.StatusWorking {
+		t.Errorf("initial status should be WORKING, got %q", node.Status)
+	}
+
+	// 3. Update status to READY_TO_PUSH
+	err = wm.UpdateNodeStatus(nodeName, types.StatusReadyToPush)
+	if err != nil {
+		t.Fatalf("UpdateNodeStatus failed: %v", err)
+	}
+
+	// 4. Verify status updated in memory
+	node = wm.State.Nodes[nodeName]
+	if node.Status != types.StatusReadyToPush {
+		t.Errorf("status should be READY_TO_PUSH, got %q", node.Status)
+	}
+
+	// 5. Reload manager and verify persistence
+	wm2, err := NewManager(wm.RootPath)
+	if err != nil {
+		t.Fatalf("Failed to reload manager: %v", err)
+	}
+
+	loadedNode, exists := wm2.State.Nodes[nodeName]
+	if !exists {
+		t.Fatalf("Node not found after reload")
+	}
+
+	if loadedNode.Status != types.StatusReadyToPush {
+		t.Errorf("persisted status should be READY_TO_PUSH, got %q", loadedNode.Status)
+	}
+}
+
+func TestUpdateNodeStatusTransitions(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	nodeName := "test-node-transitions"
+	logicalBranch := "feature/transitions"
+
+	// Spawn Node
+	err := wm.SpawnNode(nodeName, logicalBranch, "main", "Testing transitions", true)
+	if err != nil {
+		t.Fatalf("SpawnNode failed: %v", err)
+	}
+
+	// Test all status transitions
+	transitions := []struct {
+		from types.NodeStatus
+		to   types.NodeStatus
+	}{
+		{types.StatusWorking, types.StatusReadyToPush},
+		{types.StatusReadyToPush, types.StatusPushed},
+		{types.StatusPushed, types.StatusFail},
+		{types.StatusFail, types.StatusWorking},
+	}
+
+	for _, tt := range transitions {
+		err := wm.UpdateNodeStatus(nodeName, tt.to)
+		if err != nil {
+			t.Fatalf("UpdateNodeStatus from %q to %q failed: %v", tt.from, tt.to, err)
+		}
+
+		node := wm.State.Nodes[nodeName]
+		if node.Status != tt.to {
+			t.Errorf("status should be %q, got %q", tt.to, node.Status)
+		}
+	}
+}
+
+func TestUpdateNodeStatusNonExistentNode(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	// Try to update status of non-existent node
+	err := wm.UpdateNodeStatus("non-existent-node", types.StatusReadyToPush)
+	if err == nil {
+		t.Error("expected error for non-existent node, got nil")
+	}
+
+	expectedErrMsg := "does not exist"
+	if err != nil && !containsSubstring(err.Error(), expectedErrMsg) {
+		t.Errorf("error message should contain %q, got %q", expectedErrMsg, err.Error())
+	}
+}
+
+func TestUpdateNodeStatusPersistence(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	nodeName := "test-node-persist"
+	logicalBranch := "feature/persist"
+
+	// Spawn Node
+	err := wm.SpawnNode(nodeName, logicalBranch, "main", "Testing persistence", true)
+	if err != nil {
+		t.Fatalf("SpawnNode failed: %v", err)
+	}
+
+	// Update status
+	err = wm.UpdateNodeStatus(nodeName, types.StatusReadyToPush)
+	if err != nil {
+		t.Fatalf("UpdateNodeStatus failed: %v", err)
+	}
+
+	// Reload manager multiple times and verify status
+	for i := 0; i < 3; i++ {
+		wmReloaded, err := NewManager(wm.RootPath)
+		if err != nil {
+			t.Fatalf("Failed to reload manager (iteration %d): %v", i, err)
+		}
+
+		node, exists := wmReloaded.State.Nodes[nodeName]
+		if !exists {
+			t.Fatalf("Node not found after reload (iteration %d)", i)
+		}
+
+		if node.Status != types.StatusReadyToPush {
+			t.Errorf("status should be READY_TO_PUSH after reload (iteration %d), got %q", i, node.Status)
+		}
+	}
+}
+
+// containsSubstring checks if str contains substr
+func containsSubstring(str, substr string) bool {
+	for i := 0; i <= len(str)-len(substr); i++ {
+		if str[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
