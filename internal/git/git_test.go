@@ -1,7 +1,6 @@
 package git
 
 import (
-    "bytes"
     "os"
     "os/exec"
     "path/filepath"
@@ -226,90 +225,59 @@ func TestGetCurrentBranch(t *testing.T) {
     }
 }
 
-// setupTestRepoWithRemote creates a temp repo with a remote configured
-func setupTestRepoWithRemote(t *testing.T) (string, string, func()) {
-    t.Helper()
-
-    // Create remote (bare) repo
+func TestPushBranch(t *testing.T) {
+    // 1. Create a "remote" bare repository
     remoteDir, err := os.MkdirTemp("", "orion-remote-test")
     if err != nil {
         t.Fatalf("failed to create temp remote dir: %v", err)
     }
+    defer os.RemoveAll(remoteDir)
 
-    // Initialize bare remote
+    // Initialize bare repo as remote
     cmd := exec.Command("git", "init", "--bare", remoteDir)
     if output, err := cmd.CombinedOutput(); err != nil {
-        os.RemoveAll(remoteDir)
-        t.Fatalf("failed to git init --bare: %v, output: %s", err, output)
+        t.Fatalf("failed to init bare repo: %v, output: %s", err, output)
     }
 
-    // Create local repo
+    // 2. Create a local repo with a commit
     localDir, err := os.MkdirTemp("", "orion-local-test")
     if err != nil {
-        os.RemoveAll(remoteDir)
         t.Fatalf("failed to create temp local dir: %v", err)
     }
+    defer os.RemoveAll(localDir)
 
-    // Initialize local repo
-    cmd = exec.Command("git", "init")
-    cmd.Dir = localDir
+    cmd = exec.Command("git", "init", localDir)
     if output, err := cmd.CombinedOutput(); err != nil {
-        os.RemoveAll(remoteDir)
-        os.RemoveAll(localDir)
-        t.Fatalf("failed to git init: %v, output: %s", err, output)
+        t.Fatalf("failed to init local repo: %v, output: %s", err, output)
     }
 
     // Configure user
     _ = exec.Command("git", "-C", localDir, "config", "user.email", "test@example.com").Run()
     _ = exec.Command("git", "-C", localDir, "config", "user.name", "Test User").Run()
 
-    // Create initial commit
+    // Create initial commit on main
+    _ = exec.Command("git", "-C", localDir, "checkout", "-b", "main").Run()
     readme := filepath.Join(localDir, "README.md")
     if err := os.WriteFile(readme, []byte("# Test Repo"), 0644); err != nil {
-        os.RemoveAll(remoteDir)
-        os.RemoveAll(localDir)
         t.Fatalf("failed to write file: %v", err)
     }
-
-    cmd = exec.Command("git", "-C", localDir, "add", ".")
-    if err := cmd.Run(); err != nil {
-        os.RemoveAll(remoteDir)
-        os.RemoveAll(localDir)
-        t.Fatalf("failed to git add")
-    }
-
-    cmd = exec.Command("git", "-C", localDir, "commit", "-m", "Initial commit")
-    if err := cmd.Run(); err != nil {
-        os.RemoveAll(remoteDir)
-        os.RemoveAll(localDir)
-        t.Fatalf("failed to git commit")
-    }
+    _ = exec.Command("git", "-C", localDir, "add", ".").Run()
+    _ = exec.Command("git", "-C", localDir, "commit", "-m", "Initial commit").Run()
 
     // Add remote
     cmd = exec.Command("git", "-C", localDir, "remote", "add", "origin", remoteDir)
+    if err := cmd.Run(); err != nil {
+        t.Fatalf("failed to add remote: %v", err)
+    }
+
+    // Push main branch first
+    cmd = exec.Command("git", "-C", localDir, "push", "-u", "origin", "main")
     if output, err := cmd.CombinedOutput(); err != nil {
-        os.RemoveAll(remoteDir)
-        os.RemoveAll(localDir)
-        t.Fatalf("failed to add remote: %v, output: %s", err, output)
+        t.Fatalf("failed to push main: %v, output: %s", err, output)
     }
 
-    return localDir, remoteDir, func() {
-        os.RemoveAll(remoteDir)
-        os.RemoveAll(localDir)
-    }
-}
-
-func TestPushBranch(t *testing.T) {
-    localDir, remoteDir, cleanup := setupTestRepoWithRemote(t)
-    defer cleanup()
-
-    // Create a feature branch
-    if err := CreateBranch(localDir, "feature/test", "main"); err != nil {
-        t.Fatalf("CreateBranch failed: %v", err)
-    }
-
-    // Make a change on feature branch
-    _ = exec.Command("git", "-C", localDir, "checkout", "feature/test").Run()
+    // 3. Create a feature branch with a new commit
+    _ = exec.Command("git", "-C", localDir, "checkout", "-b", "feature/test").Run()
     featureFile := filepath.Join(localDir, "feature.txt")
     if err := os.WriteFile(featureFile, []byte("feature content"), 0644); err != nil {
         t.Fatalf("failed to write feature file: %v", err)
@@ -317,44 +285,89 @@ func TestPushBranch(t *testing.T) {
     _ = exec.Command("git", "-C", localDir, "add", ".").Run()
     _ = exec.Command("git", "-C", localDir, "commit", "-m", "Add feature").Run()
 
-    // Push the branch
+    // 4. Test PushBranch
     if err := PushBranch(localDir, "feature/test"); err != nil {
         t.Fatalf("PushBranch failed: %v", err)
     }
 
-    // Verify branch exists in remote by cloning and checking
-    verifyDir, err := os.MkdirTemp("", "orion-verify-test")
+    // 5. Verify the branch exists in remote by cloning
+    cloneDir, err := os.MkdirTemp("", "orion-clone-test")
     if err != nil {
-        t.Fatalf("failed to create verify dir: %v", err)
+        t.Fatalf("failed to create clone dir: %v", err)
     }
-    defer os.RemoveAll(verifyDir)
+    defer os.RemoveAll(cloneDir)
 
-    cmd := exec.Command("git", "clone", remoteDir, verifyDir)
-    if output, err := cmd.CombinedOutput(); err != nil {
-        t.Fatalf("failed to clone remote: %v, output: %s", err, output)
+    cmd = exec.Command("git", "clone", remoteDir, cloneDir)
+    if err := cmd.Run(); err != nil {
+        t.Fatalf("failed to clone remote: %v", err)
     }
 
-    // Check if feature branch exists in remote
+    // Check if feature/test branch exists
     cmd = exec.Command("git", "branch", "-r")
-    cmd.Dir = verifyDir
+    cmd.Dir = cloneDir
     output, err := cmd.CombinedOutput()
     if err != nil {
-        t.Fatalf("failed to list remote branches: %v", err)
+        t.Errorf("failed to list remote branches: %v", err)
     }
 
-    if !bytes.Contains(output, []byte("feature/test")) {
+    if !containsBranch(string(output), "feature/test") {
         t.Errorf("feature/test branch not found in remote. Output: %s", string(output))
     }
 }
 
 func TestPushBranchNonExistent(t *testing.T) {
-    localDir, _, cleanup := setupTestRepoWithRemote(t)
+    repoPath, cleanup := setupTestRepo(t)
     defer cleanup()
 
-    // Try to push a non-existent branch
-    err := PushBranch(localDir, "non-existent-branch")
-    if err == nil {
-        t.Errorf("PushBranch should fail for non-existent branch")
+    // Add a remote (pointing to a bare repo)
+    remoteDir, err := os.MkdirTemp("", "orion-remote-test")
+    if err != nil {
+        t.Fatalf("failed to create temp remote dir: %v", err)
     }
+    defer os.RemoveAll(remoteDir)
+
+    cmd := exec.Command("git", "init", "--bare", remoteDir)
+    if err := cmd.Run(); err != nil {
+        t.Fatalf("failed to init bare repo: %v", err)
+    }
+
+    _ = exec.Command("git", "-C", repoPath, "remote", "add", "origin", remoteDir).Run()
+
+    // Try to push a non-existent branch
+    err = PushBranch(repoPath, "non-existent-branch")
+    if err == nil {
+        t.Errorf("Expected error when pushing non-existent branch")
+    }
+}
+
+// containsBranch checks if the given branch name appears in git branch -r output
+func containsBranch(output, branch string) bool {
+    lines := []string{
+        "origin/" + branch,
+        branch,
+    }
+    for _, line := range lines {
+        if containsLine(output, line) {
+            return true
+        }
+    }
+    return false
+}
+
+func containsLine(output, line string) bool {
+    // Simple check: the line should appear as a substring
+    return len(output) >= len(line) && (output == line ||
+        len(output) > len(line) && (output[:len(line)] == line ||
+        output[len(output)-len(line):] == line ||
+        findSubstring(output, line)))
+}
+
+func findSubstring(s, substr string) bool {
+    for i := 0; i <= len(s)-len(substr); i++ {
+        if s[i:i+len(substr)] == substr {
+            return true
+        }
+    }
+    return false
 }
 
