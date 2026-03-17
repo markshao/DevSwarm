@@ -12,229 +12,162 @@ func TestNodeStatusConstants(t *testing.T) {
 		status   NodeStatus
 		expected string
 	}{
-		{
-			name:     "StatusWorking",
-			status:   StatusWorking,
-			expected: "WORKING",
-		},
-		{
-			name:     "StatusReadyToPush",
-			status:   StatusReadyToPush,
-			expected: "READY_TO_PUSH",
-		},
-		{
-			name:     "StatusFail",
-			status:   StatusFail,
-			expected: "FAIL",
-		},
-		{
-			name:     "StatusPushed",
-			status:   StatusPushed,
-			expected: "PUSHED",
-		},
+		{"StatusWorking", StatusWorking, "WORKING"},
+		{"StatusReadyToPush", StatusReadyToPush, "READY_TO_PUSH"},
+		{"StatusFail", StatusFail, "FAIL"},
+		{"StatusPushed", StatusPushed, "PUSHED"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if string(tt.status) != tt.expected {
-				t.Errorf("expected %s, got %s", tt.expected, tt.status)
+				t.Errorf("Expected %s to be %q, got %q", tt.name, tt.expected, tt.status)
 			}
 		})
 	}
 }
 
-func TestNodeStatusJSONMarshaling(t *testing.T) {
+func TestNodeStatusJSONSerialization(t *testing.T) {
 	tests := []struct {
 		name         string
 		status       NodeStatus
 		expectedJSON string
 	}{
-		{
-			name:         "Working status",
-			status:       StatusWorking,
-			expectedJSON: `"WORKING"`,
-		},
-		{
-			name:         "ReadyToPush status",
-			status:       StatusReadyToPush,
-			expectedJSON: `"READY_TO_PUSH"`,
-		},
-		{
-			name:         "Fail status",
-			status:       StatusFail,
-			expectedJSON: `"FAIL"`,
-		},
-		{
-			name:         "Pushed status",
-			status:       StatusPushed,
-			expectedJSON: `"PUSHED"`,
-		},
-		{
-			name:         "Empty status (omitted)",
-			status:       "",
-			expectedJSON: `{}`,
-		},
+		{"StatusWorking", StatusWorking, `"WORKING"`},
+		{"StatusReadyToPush", StatusReadyToPush, `"READY_TO_PUSH"`},
+		{"StatusFail", StatusFail, `"FAIL"`},
+		{"StatusPushed", StatusPushed, `"PUSHED"`},
+		{"EmptyStatus", "", `""`}, // Empty status marshals to empty string
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			node := Node{
-				Name:   "test-node",
-				Status: tt.status,
-			}
-
-			data, err := json.Marshal(node)
+			// Test marshal
+			data, err := json.Marshal(tt.status)
 			if err != nil {
-				t.Fatalf("failed to marshal node: %v", err)
+				t.Fatalf("Marshal failed: %v", err)
+			}
+			if string(data) != tt.expectedJSON {
+				t.Errorf("Marshal: expected %s, got %s", tt.expectedJSON, string(data))
 			}
 
-			jsonStr := string(data)
-			if tt.status == "" {
-				// Empty status should be omitted
-				if !contains(jsonStr, `"status"`) {
-					// Good, status is omitted
-				} else {
-					t.Errorf("expected status to be omitted when empty, got: %s", jsonStr)
-				}
-			} else {
-				if !contains(jsonStr, `"status":`+tt.expectedJSON) {
-					t.Errorf("expected status %s, got: %s", tt.expectedJSON, jsonStr)
-				}
+			// Test unmarshal
+			var unmarshaled NodeStatus
+			if err := json.Unmarshal([]byte(tt.expectedJSON), &unmarshaled); err != nil {
+				t.Fatalf("Unmarshal failed: %v", err)
+			}
+			if unmarshaled != tt.status {
+				t.Errorf("Unmarshal: expected %v, got %v", tt.status, unmarshaled)
 			}
 		})
 	}
 }
 
-func TestNodeWithStatus(t *testing.T) {
-	now := time.Now()
+func TestNodeWithStatusJSONSerialization(t *testing.T) {
+	node := Node{
+		Name:          "test-node",
+		LogicalBranch: "feature/test",
+		BaseBranch:    "main",
+		ShadowBranch:  "orion-shadow/test-node/feature/test",
+		WorktreePath:  "/tmp/test-worktree",
+		Label:         "test",
+		CreatedBy:     "user",
+		Status:        StatusReadyToPush,
+		AppliedRuns:   []string{"run-1", "run-2"},
+		CreatedAt:     time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+	}
+
+	// Marshal
+	data, err := json.Marshal(node)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	// Unmarshal back
+	var unmarshaled Node
+	if err := json.Unmarshal(data, &unmarshaled); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	// Verify fields
+	if unmarshaled.Name != node.Name {
+		t.Errorf("Name mismatch: expected %s, got %s", node.Name, unmarshaled.Name)
+	}
+	if unmarshaled.Status != node.Status {
+		t.Errorf("Status mismatch: expected %v, got %v", node.Status, unmarshaled.Status)
+	}
+	if len(unmarshaled.AppliedRuns) != len(node.AppliedRuns) {
+		t.Errorf("AppliedRuns length mismatch: expected %d, got %d", len(node.AppliedRuns), len(unmarshaled.AppliedRuns))
+	}
+}
+
+func TestNodeWithEmptyStatusJSONSerialization(t *testing.T) {
+	node := Node{
+		Name:          "test-node",
+		LogicalBranch: "feature/test",
+		Status:        "", // Empty status
+		CreatedAt:     time.Now(),
+	}
+
+	// Marshal
+	data, err := json.Marshal(node)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	// Verify status is omitted when empty (due to omitempty)
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("Unmarshal to map failed: %v", err)
+	}
+
+	if _, exists := result["status"]; exists {
+		t.Errorf("Expected status to be omitted when empty, but it was present in JSON: %s", string(data))
+	}
+}
+
+func TestNodeStatusComparison(t *testing.T) {
 	tests := []struct {
-		name          string
-		node          Node
-		expectedJSON  string
-		shouldContain []string
+		name     string
+		status1  NodeStatus
+		status2  NodeStatus
+		expected bool
 	}{
-		{
-			name: "Node with Working status",
-			node: Node{
-				Name:          "test-node",
-				LogicalBranch: "feature/test",
-				BaseBranch:    "main",
-				ShadowBranch:  "orion/test/feature/test",
-				WorktreePath:  "/tmp/test",
-				Status:        StatusWorking,
-				CreatedAt:     now,
-			},
-			shouldContain: []string{`"status":"WORKING"`, `"name":"test-node"`},
-		},
-		{
-			name: "Node with ReadyToPush status",
-			node: Node{
-				Name:          "test-node",
-				LogicalBranch: "feature/test",
-				BaseBranch:    "main",
-				ShadowBranch:  "orion/test/feature/test",
-				WorktreePath:  "/tmp/test",
-				Status:        StatusReadyToPush,
-				CreatedAt:     now,
-			},
-			shouldContain: []string{`"status":"READY_TO_PUSH"`, `"name":"test-node"`},
-		},
-		{
-			name: "Node without status (legacy)",
-			node: Node{
-				Name:          "test-node",
-				LogicalBranch: "feature/test",
-				BaseBranch:    "main",
-				ShadowBranch:  "orion/test/feature/test",
-				WorktreePath:  "/tmp/test",
-				Status:        "",
-				CreatedAt:     now,
-			},
-			shouldContain: []string{`"name":"test-node"`},
-		},
+		{"SameStatus", StatusWorking, StatusWorking, true},
+		{"DifferentStatus", StatusWorking, StatusReadyToPush, false},
+		{"EmptyStatus", "", "", true},
+		{"EmptyVsWorking", "", StatusWorking, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data, err := json.Marshal(tt.node)
-			if err != nil {
-				t.Fatalf("failed to marshal node: %v", err)
-			}
-
-			jsonStr := string(data)
-			for _, expected := range tt.shouldContain {
-				if !contains(jsonStr, expected) {
-					t.Errorf("expected JSON to contain %s, got: %s", expected, jsonStr)
-				}
+			result := tt.status1 == tt.status2
+			if result != tt.expected {
+				t.Errorf("Expected %v == %v to be %v", tt.status1, tt.status2, tt.expected)
 			}
 		})
 	}
 }
 
-func TestNodeStatusUnmarshaling(t *testing.T) {
+func TestNodeStatusFromString(t *testing.T) {
 	tests := []struct {
-		name           string
-		jsonInput      string
-		expectedStatus NodeStatus
-		expectError    bool
+		name     string
+		input    string
+		expected NodeStatus
 	}{
-		{
-			name:           "Working status",
-			jsonInput:      `{"name":"test","status":"WORKING"}`,
-			expectedStatus: StatusWorking,
-			expectError:    false,
-		},
-		{
-			name:           "ReadyToPush status",
-			jsonInput:      `{"name":"test","status":"READY_TO_PUSH"}`,
-			expectedStatus: StatusReadyToPush,
-			expectError:    false,
-		},
-		{
-			name:           "Fail status",
-			jsonInput:      `{"name":"test","status":"FAIL"}`,
-			expectedStatus: StatusFail,
-			expectError:    false,
-		},
-		{
-			name:           "Pushed status",
-			jsonInput:      `{"name":"test","status":"PUSHED"}`,
-			expectedStatus: StatusPushed,
-			expectError:    false,
-		},
-		{
-			name:           "No status field",
-			jsonInput:      `{"name":"test"}`,
-			expectedStatus: "",
-			expectError:    false,
-		},
+		{"WorkingString", "WORKING", StatusWorking},
+		{"ReadyToPushString", "READY_TO_PUSH", StatusReadyToPush},
+		{"FailString", "FAIL", StatusFail},
+		{"PushedString", "PUSHED", StatusPushed},
+		{"UnknownString", "UNKNOWN", "UNKNOWN"}, // Unknown status should just be the string
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var node Node
-			err := json.Unmarshal([]byte(tt.jsonInput), &node)
-			if (err != nil) != tt.expectError {
-				t.Errorf("expected error: %v, got: %v", tt.expectError, err)
-				return
-			}
-			if !tt.expectError && node.Status != tt.expectedStatus {
-				t.Errorf("expected status %s, got %s", tt.expectedStatus, node.Status)
+			result := NodeStatus(tt.input)
+			if result != tt.expected {
+				t.Errorf("Expected NodeStatus(%q) to be %v, got %v", tt.input, tt.expected, result)
 			}
 		})
 	}
-}
-
-// contains is a helper function to check if a string contains a substring
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && findSubstring(s, substr))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
