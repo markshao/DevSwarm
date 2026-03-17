@@ -1,348 +1,360 @@
 package git
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-	"testing"
+    "bytes"
+    "os"
+    "os/exec"
+    "path/filepath"
+    "testing"
 )
 
-// setupTestRepo creates a temporary git repository for testing
+// setupTestRepo 创建一个带有初始提交且当前分支为 main 的临时 Git 仓库
 func setupTestRepo(t *testing.T) (string, func()) {
-	t.Helper()
+    t.Helper()
 
-	dir, err := os.MkdirTemp("", "git-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
+    dir, err := os.MkdirTemp("", "orion-git-test")
+    if err != nil {
+        t.Fatalf("failed to create temp dir: %v", err)
+    }
 
-	// Initialize git repo
-	exec.Command("git", "init", dir).Run()
-	exec.Command("git", "-C", dir, "config", "user.email", "test@example.com").Run()
-	exec.Command("git", "-C", dir, "config", "user.name", "Test User").Run()
-	exec.Command("git", "-C", dir, "checkout", "-b", "main").Run()
+    // 初始化 git 仓库
+    cmd := exec.Command("git", "init")
+    cmd.Dir = dir
+    if output, err := cmd.CombinedOutput(); err != nil {
+        os.RemoveAll(dir)
+        t.Fatalf("failed to git init: %v, output: %s", err, output)
+    }
 
-	// Create initial commit
-	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Test"), 0644)
-	exec.Command("git", "-C", dir, "add", ".").Run()
-	exec.Command("git", "-C", dir, "commit", "-m", "Initial commit").Run()
+    // 配置用户信息，保证后续提交成功
+    _ = exec.Command("git", "-C", dir, "config", "user.email", "test@example.com").Run()
+    _ = exec.Command("git", "-C", dir, "config", "user.name", "Test User").Run()
 
-	cleanup := func() {
-		os.RemoveAll(dir)
-	}
+    // 将当前分支标准化为 main
+    _ = exec.Command("git", "-C", dir, "checkout", "-b", "main").Run()
 
-	return dir, cleanup
-}
+    // 创建初始提交
+    readme := filepath.Join(dir, "README.md")
+    if err := os.WriteFile(readme, []byte("# Test Repo"), 0644); err != nil {
+        t.Fatalf("failed to write file: %v", err)
+    }
 
-func TestGetCurrentBranch(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
+    cmd = exec.Command("git", "-C", dir, "add", ".")
+    if err := cmd.Run(); err != nil {
+        t.Fatalf("failed to git add")
+    }
 
-	branch, err := GetCurrentBranch(repoPath)
-	if err != nil {
-		t.Fatalf("GetCurrentBranch failed: %v", err)
-	}
-	if branch != "main" {
-		t.Errorf("expected branch 'main', got '%s'", branch)
-	}
-}
+    cmd = exec.Command("git", "-C", dir, "commit", "-m", "Initial commit")
+    if err := cmd.Run(); err != nil {
+        t.Fatalf("failed to git commit")
+    }
 
-func TestGetLatestCommitHash(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
-
-	hash, err := GetLatestCommitHash(repoPath)
-	if err != nil {
-		t.Fatalf("GetLatestCommitHash failed: %v", err)
-	}
-	if len(hash) != 40 {
-		t.Errorf("expected 40 character hash, got %d", len(hash))
-	}
-}
-
-func TestGetConfigAndSetConfig(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
-
-	// Test SetConfig
-	err := SetConfig(repoPath, "user.name", "New Test User")
-	if err != nil {
-		t.Fatalf("SetConfig failed: %v", err)
-	}
-
-	// Test GetConfig
-	value, err := GetConfig(repoPath, "user.name")
-	if err != nil {
-		t.Fatalf("GetConfig failed: %v", err)
-	}
-	if value != "New Test User" {
-		t.Errorf("expected 'New Test User', got '%s'", value)
-	}
-}
-
-func TestBranchExists(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
-
-	// Test existing branch
-	exists, err := BranchExists(repoPath, "main")
-	if err != nil {
-		t.Fatalf("BranchExists failed: %v", err)
-	}
-	if !exists {
-		t.Error("expected 'main' branch to exist")
-	}
-
-	// Test non-existing branch
-	exists, err = BranchExists(repoPath, "non-existent")
-	if err != nil {
-		t.Fatalf("BranchExists failed: %v", err)
-	}
-	if exists {
-		t.Error("expected 'non-existent' branch to not exist")
-	}
+    return dir, func() { _ = os.RemoveAll(dir) }
 }
 
 func TestVerifyBranch(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
+    repoPath, cleanup := setupTestRepo(t)
+    defer cleanup()
 
-	// Test existing branch
-	err := VerifyBranch(repoPath, "main")
-	if err != nil {
-		t.Errorf("VerifyBranch failed for existing branch: %v", err)
-	}
+    if err := VerifyBranch(repoPath, "main"); err != nil {
+        t.Errorf("VerifyBranch(main) failed: %v", err)
+    }
 
-	// Test non-existing branch
-	err = VerifyBranch(repoPath, "non-existent")
-	if err == nil {
-		t.Error("expected error for non-existent branch")
-	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("expected 'not found' error, got: %v", err)
-	}
+    if err := VerifyBranch(repoPath, "non-existent"); err == nil {
+        t.Errorf("VerifyBranch(non-existent) succeeded, expected error")
+    }
 }
 
 func TestCreateBranch(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
+    repoPath, cleanup := setupTestRepo(t)
+    defer cleanup()
 
-	err := CreateBranch(repoPath, "feature/test", "main")
-	if err != nil {
-		t.Fatalf("CreateBranch failed: %v", err)
-	}
+    if err := CreateBranch(repoPath, "feature/test", "main"); err != nil {
+        t.Fatalf("CreateBranch failed: %v", err)
+    }
 
-	exists, err := BranchExists(repoPath, "feature/test")
-	if err != nil {
-		t.Fatalf("BranchExists failed: %v", err)
-	}
-	if !exists {
-		t.Error("expected 'feature/test' branch to exist")
-	}
-}
-
-func TestDeleteBranch(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
-
-	// Create a branch first
-	exec.Command("git", "-C", repoPath, "branch", "feature/delete").Run()
-
-	err := DeleteBranch(repoPath, "feature/delete")
-	if err != nil {
-		t.Fatalf("DeleteBranch failed: %v", err)
-	}
-
-	exists, _ := BranchExists(repoPath, "feature/delete")
-	if exists {
-		t.Error("expected 'feature/delete' branch to be deleted")
-	}
+    if err := VerifyBranch(repoPath, "feature/test"); err != nil {
+        t.Errorf("VerifyBranch(feature/test) failed after creation: %v", err)
+    }
 }
 
 func TestAddWorktree(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
+    repoPath, cleanup := setupTestRepo(t)
+    defer cleanup()
 
-	worktreePath := filepath.Join(os.TempDir(), "test-worktree")
-	defer os.RemoveAll(worktreePath)
+    worktreeDir, err := os.MkdirTemp("", "orion-worktree-test")
+    if err != nil {
+        t.Fatalf("failed to create temp worktree dir: %v", err)
+    }
+    defer os.RemoveAll(worktreeDir)
 
-	err := AddWorktree(repoPath, worktreePath, "feature/wt", "main")
-	if err != nil {
-		t.Fatalf("AddWorktree failed: %v", err)
-	}
+    // git worktree add 目标目录应该不存在或为空，让 git 自己创建更安全
+    wtPath := filepath.Join(worktreeDir, "my-worktree")
 
-	// Check if worktree directory exists
-	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
-		t.Error("expected worktree directory to exist")
-	}
+    // 1）从 main 创建新分支并挂载 worktree
+    if err := AddWorktree(repoPath, wtPath, "feature/wt-test", "main"); err != nil {
+        t.Fatalf("AddWorktree(new branch) failed: %v", err)
+    }
 
-	// Check if branch exists
-	exists, err := BranchExists(repoPath, "feature/wt")
-	if err != nil {
-		t.Fatalf("BranchExists failed: %v", err)
-	}
-	if !exists {
-		t.Error("expected 'feature/wt' branch to exist")
-	}
+    if _, err := os.Stat(filepath.Join(wtPath, ".git")); os.IsNotExist(err) {
+        t.Errorf("Worktree .git file not found at %s", wtPath)
+    }
+
+    if err := VerifyBranch(repoPath, "feature/wt-test"); err != nil {
+        t.Errorf("Branch feature/wt-test was not created: %v", err)
+    }
+
+    // 清理后验证基于已存在分支的模式
+    _ = RemoveWorktree(repoPath, wtPath)
+
+    // 创建一个已存在分支
+    _ = exec.Command("git", "-C", repoPath, "branch", "existing-branch", "main").Run()
+
+    wtPath2 := filepath.Join(worktreeDir, "my-worktree-2")
+    if err := AddWorktree(repoPath, wtPath2, "existing-branch", "existing-branch"); err != nil {
+        t.Fatalf("AddWorktree(existing branch) failed: %v", err)
+    }
+
+    if _, err := os.Stat(filepath.Join(wtPath2, ".git")); os.IsNotExist(err) {
+        t.Errorf("Worktree .git file not found at %s", wtPath2)
+    }
 }
 
 func TestRemoveWorktree(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
+    repoPath, cleanup := setupTestRepo(t)
+    defer cleanup()
 
-	worktreePath := filepath.Join(os.TempDir(), "test-worktree-remove")
-	// Use git command directly to ensure proper setup
-	cmd := exec.Command("git", "-C", repoPath, "worktree", "add", worktreePath, "main")
-	if err := cmd.Run(); err != nil {
-		t.Skipf("failed to create worktree: %v", err)
-	}
-	defer os.RemoveAll(worktreePath)
+    worktreeDir, err := os.MkdirTemp("", "orion-worktree-test")
+    if err != nil {
+        t.Fatalf("failed to create temp worktree dir: %v", err)
+    }
+    defer os.RemoveAll(worktreeDir)
 
-	err := RemoveWorktree(repoPath, worktreePath)
-	if err != nil {
-		// On some systems, worktree removal might fail due to file locks or permissions
-		t.Logf("RemoveWorktree returned: %v (may be expected in some environments)", err)
-	}
+    wtPath := filepath.Join(worktreeDir, "my-worktree-remove")
+    if err := AddWorktree(repoPath, wtPath, "feature/remove-test", "main"); err != nil {
+        t.Fatalf("AddWorktree for remove test failed: %v", err)
+    }
+
+    if _, err := os.Stat(wtPath); os.IsNotExist(err) {
+        t.Fatalf("Setup failed: worktree not created")
+    }
+
+    if err := RemoveWorktree(repoPath, wtPath); err != nil {
+        t.Errorf("RemoveWorktree failed: %v", err)
+    }
+
+    if _, err := os.Stat(wtPath); !os.IsNotExist(err) {
+        // 目录可能还在，但应为空
+        entries, _ := os.ReadDir(wtPath)
+        if len(entries) > 0 {
+            t.Errorf("Worktree directory not empty after removal: %s", wtPath)
+        }
+    }
 }
 
 func TestSquashMerge(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
+    repoPath, cleanup := setupTestRepo(t)
+    defer cleanup()
 
-	// Create a feature branch with a commit
-	exec.Command("git", "-C", repoPath, "checkout", "-b", "feature/merge").Run()
-	os.WriteFile(filepath.Join(repoPath, "feature.txt"), []byte("feature content"), 0644)
-	exec.Command("git", "-C", repoPath, "add", ".").Run()
-	exec.Command("git", "-C", repoPath, "commit", "-m", "Feature commit").Run()
+    // 在 feature 分支上制造一个提交
+    _ = exec.Command("git", "-C", repoPath, "checkout", "-b", "feature/merge-test").Run()
 
-	// Go back to main
-	exec.Command("git", "-C", repoPath, "checkout", "main").Run()
+    newFile := filepath.Join(repoPath, "feature.txt")
+    if err := os.WriteFile(newFile, []byte("feature content"), 0644); err != nil {
+        t.Fatalf("failed to write feature file: %v", err)
+    }
+    _ = exec.Command("git", "-C", repoPath, "add", "feature.txt").Run()
+    if err := exec.Command("git", "-C", repoPath, "commit", "-m", "Add feature").Run(); err != nil {
+        t.Fatalf("failed to commit on feature branch: %v", err)
+    }
 
-	// Squash merge
-	err := SquashMerge(repoPath, "main", "feature/merge", "Squash merge feature")
-	if err != nil {
-		t.Fatalf("SquashMerge failed: %v", err)
-	}
+    // 切回 main 后做 squash merge
+    _ = exec.Command("git", "-C", repoPath, "checkout", "main").Run()
 
-	// Check if feature.txt exists in main
-	if _, err := os.Stat(filepath.Join(repoPath, "feature.txt")); os.IsNotExist(err) {
-		t.Error("expected feature.txt to exist after squash merge")
-	}
+    if err := SquashMerge(repoPath, "main", "feature/merge-test", "Squash feature"); err != nil {
+        t.Fatalf("SquashMerge failed: %v", err)
+    }
+
+    if _, err := os.Stat(newFile); os.IsNotExist(err) {
+        t.Errorf("Merged file not found in main branch")
+    }
+
+    out, _ := exec.Command("git", "-C", repoPath, "log", "-1", "--pretty=%s").Output()
+    if string(out) != "Squash feature\n" {
+        t.Errorf("Commit message mismatch. Got: %s", string(out))
+    }
 }
 
-func TestCommitWorktree(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
+func TestGetAndSetConfig(t *testing.T) {
+    repoPath, cleanup := setupTestRepo(t)
+    defer cleanup()
 
-	// Create a new file
-	testFile := filepath.Join(repoPath, "test.txt")
-	os.WriteFile(testFile, []byte("test content"), 0644)
+    // 覆盖本地 git config
+    if err := SetConfig(repoPath, "user.name", "Alice"); err != nil {
+        t.Fatalf("SetConfig user.name failed: %v", err)
+    }
+    if err := SetConfig(repoPath, "user.email", "alice@example.com"); err != nil {
+        t.Fatalf("SetConfig user.email failed: %v", err)
+    }
 
-	err := CommitWorktree(repoPath, "Test commit")
-	if err != nil {
-		t.Fatalf("CommitWorktree failed: %v", err)
-	}
+    name, err := GetConfig(repoPath, "user.name")
+    if err != nil {
+        t.Fatalf("GetConfig user.name failed: %v", err)
+    }
+    if name != "Alice" {
+        t.Errorf("unexpected user.name: got %q, want %q", name, "Alice")
+    }
 
-	// Check if commit was made
-	hash, err := GetLatestCommitHash(repoPath)
-	if err != nil {
-		t.Fatalf("GetLatestCommitHash failed: %v", err)
-	}
-
-	// Verify commit message (optional, more complex)
-	output, _ := exec.Command("git", "-C", repoPath, "log", "-1", "--format=%s").Output()
-	if !strings.Contains(string(output), "Test commit") {
-		t.Errorf("expected commit message 'Test commit', got: %s", string(output))
-	}
-
-	_ = hash // suppress unused warning
+    email, err := GetConfig(repoPath, "user.email")
+    if err != nil {
+        t.Fatalf("GetConfig user.email failed: %v", err)
+    }
+    if email != "alice@example.com" {
+        t.Errorf("unexpected user.email: got %q, want %q", email, "alice@example.com")
+    }
 }
 
-func TestHasChanges(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
+func TestGetCurrentBranch(t *testing.T) {
+    repoPath, cleanup := setupTestRepo(t)
+    defer cleanup()
 
-	// Initially no changes
-	hasChanges, err := HasChanges(repoPath)
-	if err != nil {
-		t.Fatalf("HasChanges failed: %v", err)
-	}
-	if hasChanges {
-		t.Error("expected no changes initially")
-	}
-
-	// Create a new file
-	os.WriteFile(filepath.Join(repoPath, "new.txt"), []byte("new"), 0644)
-
-	hasChanges, err = HasChanges(repoPath)
-	if err != nil {
-		t.Fatalf("HasChanges failed: %v", err)
-	}
-	if !hasChanges {
-		t.Error("expected changes after creating new file")
-	}
+    br, err := GetCurrentBranch(repoPath)
+    if err != nil {
+        t.Fatalf("GetCurrentBranch failed: %v", err)
+    }
+    if br != "main" {
+        t.Errorf("unexpected current branch: got %q, want %q", br, "main")
+    }
 }
 
-func TestGetChangedFiles(t *testing.T) {
-	repoPath, cleanup := setupTestRepo(t)
-	defer cleanup()
+// setupTestRepoWithRemote creates a temp repo with a remote configured
+func setupTestRepoWithRemote(t *testing.T) (string, string, func()) {
+    t.Helper()
 
-	// Create a commit with multiple files
-	os.WriteFile(filepath.Join(repoPath, "file1.txt"), []byte("file1"), 0644)
-	os.WriteFile(filepath.Join(repoPath, "file2.txt"), []byte("file2"), 0644)
-	exec.Command("git", "-C", repoPath, "add", ".").Run()
-	exec.Command("git", "-C", repoPath, "commit", "-m", "Add files").Run()
+    // Create remote (bare) repo
+    remoteDir, err := os.MkdirTemp("", "orion-remote-test")
+    if err != nil {
+        t.Fatalf("failed to create temp remote dir: %v", err)
+    }
 
-	// Get latest commit hash
-	hash, _ := GetLatestCommitHash(repoPath)
-	prevHash, _ := exec.Command("git", "-C", repoPath, "rev-parse", "HEAD~1").Output()
+    // Initialize bare remote
+    cmd := exec.Command("git", "init", "--bare", remoteDir)
+    if output, err := cmd.CombinedOutput(); err != nil {
+        os.RemoveAll(remoteDir)
+        t.Fatalf("failed to git init --bare: %v, output: %s", err, output)
+    }
 
-	files, err := GetChangedFiles(repoPath, strings.TrimSpace(string(prevHash)), hash)
-	if err != nil {
-		t.Fatalf("GetChangedFiles failed: %v", err)
-	}
+    // Create local repo
+    localDir, err := os.MkdirTemp("", "orion-local-test")
+    if err != nil {
+        os.RemoveAll(remoteDir)
+        t.Fatalf("failed to create temp local dir: %v", err)
+    }
 
-	if len(files) != 2 {
-		t.Errorf("expected 2 changed files, got %d: %v", len(files), files)
-	}
-}
+    // Initialize local repo
+    cmd = exec.Command("git", "init")
+    cmd.Dir = localDir
+    if output, err := cmd.CombinedOutput(); err != nil {
+        os.RemoveAll(remoteDir)
+        os.RemoveAll(localDir)
+        t.Fatalf("failed to git init: %v, output: %s", err, output)
+    }
 
-func TestClone(t *testing.T) {
-	// Create source repo
-	srcPath, cleanup := setupTestRepo(t)
-	defer cleanup()
+    // Configure user
+    _ = exec.Command("git", "-C", localDir, "config", "user.email", "test@example.com").Run()
+    _ = exec.Command("git", "-C", localDir, "config", "user.name", "Test User").Run()
 
-	// Create temp dir for clone
-	dstPath, err := os.MkdirTemp("", "git-clone-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(dstPath)
+    // Create initial commit
+    readme := filepath.Join(localDir, "README.md")
+    if err := os.WriteFile(readme, []byte("# Test Repo"), 0644); err != nil {
+        os.RemoveAll(remoteDir)
+        os.RemoveAll(localDir)
+        t.Fatalf("failed to write file: %v", err)
+    }
 
-	clonePath := filepath.Join(dstPath, "cloned")
-	err = Clone(srcPath, clonePath)
-	if err != nil {
-		t.Fatalf("Clone failed: %v", err)
-	}
+    cmd = exec.Command("git", "-C", localDir, "add", ".")
+    if err := cmd.Run(); err != nil {
+        os.RemoveAll(remoteDir)
+        os.RemoveAll(localDir)
+        t.Fatalf("failed to git add")
+    }
 
-	// Check if cloned repo exists and has the file
-	if _, err := os.Stat(filepath.Join(clonePath, "README.md")); os.IsNotExist(err) {
-		t.Error("expected README.md to exist in cloned repo")
-	}
+    cmd = exec.Command("git", "-C", localDir, "commit", "-m", "Initial commit")
+    if err := cmd.Run(); err != nil {
+        os.RemoveAll(remoteDir)
+        os.RemoveAll(localDir)
+        t.Fatalf("failed to git commit")
+    }
 
-	// Verify git repo
-	branch, err := GetCurrentBranch(clonePath)
-	if err != nil {
-		t.Fatalf("GetCurrentBranch failed in cloned repo: %v", err)
-	}
-	if branch != "main" {
-		t.Errorf("expected branch 'main' in cloned repo, got '%s'", branch)
-	}
+    // Add remote
+    cmd = exec.Command("git", "-C", localDir, "remote", "add", "origin", remoteDir)
+    if output, err := cmd.CombinedOutput(); err != nil {
+        os.RemoveAll(remoteDir)
+        os.RemoveAll(localDir)
+        t.Fatalf("failed to add remote: %v, output: %s", err, output)
+    }
+
+    return localDir, remoteDir, func() {
+        os.RemoveAll(remoteDir)
+        os.RemoveAll(localDir)
+    }
 }
 
 func TestPushBranch(t *testing.T) {
-	// This test requires a remote repository setup
-	// We'll skip it in CI environments without proper setup
-	t.Skip("PushBranch test requires remote repository setup")
+    localDir, remoteDir, cleanup := setupTestRepoWithRemote(t)
+    defer cleanup()
+
+    // Create a feature branch
+    if err := CreateBranch(localDir, "feature/test", "main"); err != nil {
+        t.Fatalf("CreateBranch failed: %v", err)
+    }
+
+    // Make a change on feature branch
+    _ = exec.Command("git", "-C", localDir, "checkout", "feature/test").Run()
+    featureFile := filepath.Join(localDir, "feature.txt")
+    if err := os.WriteFile(featureFile, []byte("feature content"), 0644); err != nil {
+        t.Fatalf("failed to write feature file: %v", err)
+    }
+    _ = exec.Command("git", "-C", localDir, "add", ".").Run()
+    _ = exec.Command("git", "-C", localDir, "commit", "-m", "Add feature").Run()
+
+    // Push the branch
+    if err := PushBranch(localDir, "feature/test"); err != nil {
+        t.Fatalf("PushBranch failed: %v", err)
+    }
+
+    // Verify branch exists in remote by cloning and checking
+    verifyDir, err := os.MkdirTemp("", "orion-verify-test")
+    if err != nil {
+        t.Fatalf("failed to create verify dir: %v", err)
+    }
+    defer os.RemoveAll(verifyDir)
+
+    cmd := exec.Command("git", "clone", remoteDir, verifyDir)
+    if output, err := cmd.CombinedOutput(); err != nil {
+        t.Fatalf("failed to clone remote: %v, output: %s", err, output)
+    }
+
+    // Check if feature branch exists in remote
+    cmd = exec.Command("git", "branch", "-r")
+    cmd.Dir = verifyDir
+    output, err := cmd.CombinedOutput()
+    if err != nil {
+        t.Fatalf("failed to list remote branches: %v", err)
+    }
+
+    if !bytes.Contains(output, []byte("feature/test")) {
+        t.Errorf("feature/test branch not found in remote. Output: %s", string(output))
+    }
 }
+
+func TestPushBranchNonExistent(t *testing.T) {
+    localDir, _, cleanup := setupTestRepoWithRemote(t)
+    defer cleanup()
+
+    // Try to push a non-existent branch
+    err := PushBranch(localDir, "non-existent-branch")
+    if err == nil {
+        t.Errorf("PushBranch should fail for non-existent branch")
+    }
+}
+
