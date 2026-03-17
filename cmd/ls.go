@@ -17,6 +17,7 @@ var lsCmd = &cobra.Command{
 	Short: "List all development nodes",
 	Run: func(cmd *cobra.Command, args []string) {
 		showAll, _ := cmd.Flags().GetBool("all")
+		quiet, _ := cmd.Flags().GetBool("quiet")
 
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -28,6 +29,18 @@ var lsCmd = &cobra.Command{
 		if err != nil {
 			fmt.Printf("Failed to load workspace: %v\n", err)
 			os.Exit(1)
+		}
+
+		// Quiet mode: only output node names, suitable for piping
+		if quiet {
+			for name, node := range wm.State.Nodes {
+				// Filter out agent nodes unless --all is specified
+				if !showAll && node.CreatedBy != "user" {
+					continue
+				}
+				fmt.Println(name)
+			}
+			return
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
@@ -70,5 +83,6 @@ var lsCmd = &cobra.Command{
 
 func init() {
 	lsCmd.Flags().BoolP("all", "a", false, "Show all nodes (including agent nodes)")
+	lsCmd.Flags().BoolP("quiet", "q", false, "Only output node names (for piping)")
 	rootCmd.AddCommand(lsCmd)
 }
