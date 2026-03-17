@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"encoding/json"
 	"orion/internal/git"
 	"orion/internal/types"
 	"os"
@@ -447,5 +448,192 @@ func TestAppliedRunsPersistence(t *testing.T) {
 	}
 	if loadedNode.AppliedRuns[0] != "run-1" || loadedNode.AppliedRuns[1] != "run-2" {
 		t.Errorf("AppliedRuns content mismatch: %v", loadedNode.AppliedRuns)
+	}
+}
+
+// TestGetConfigWithMissingFile tests GetConfig returns default config when config.yaml is missing
+func TestGetConfigWithMissingFile(t *testing.T) {
+	// Create a minimal workspace without config.yaml
+	rootDir, err := os.MkdirTemp("", "orion-config-missing-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	// Create only .orion directory (no config.yaml)
+	metaDir := filepath.Join(rootDir, MetaDir)
+	if err := os.MkdirAll(metaDir, 0755); err != nil {
+		t.Fatalf("failed to create .orion dir: %v", err)
+	}
+
+	// Create minimal state.json
+	state := types.State{
+		RepoURL:  "https://example.com/repo.git",
+		RepoPath: filepath.Join(rootDir, RepoDir),
+		Nodes:    make(map[string]types.Node),
+	}
+	stateData, _ := json.Marshal(state)
+	if err := os.WriteFile(filepath.Join(metaDir, StateFile), stateData, 0644); err != nil {
+		t.Fatalf("failed to write state.json: %v", err)
+	}
+
+	// Create manager
+	wm, err := NewManager(rootDir)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	// GetConfig should return default config
+	config, err := wm.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig failed: %v", err)
+	}
+
+	if config.Version != 1 {
+		t.Errorf("Expected default version 1, got %d", config.Version)
+	}
+	if config.Agents.DefaultProvider != "qwen" {
+		t.Errorf("Expected default provider 'qwen', got '%s'", config.Agents.DefaultProvider)
+	}
+}
+
+// TestGetConfigWithInvalidYAML tests GetConfig with invalid YAML
+func TestGetConfigWithInvalidYAML(t *testing.T) {
+	rootDir, err := os.MkdirTemp("", "orion-config-invalid-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	// Create .orion directory
+	metaDir := filepath.Join(rootDir, MetaDir)
+	if err := os.MkdirAll(metaDir, 0755); err != nil {
+		t.Fatalf("failed to create .orion dir: %v", err)
+	}
+
+	// Create invalid config.yaml
+	invalidConfig := `version: invalid: yaml: [broken`
+	if err := os.WriteFile(filepath.Join(metaDir, ConfigFile), []byte(invalidConfig), 0644); err != nil {
+		t.Fatalf("failed to write config.yaml: %v", err)
+	}
+
+	// Create minimal state.json
+	state := types.State{
+		RepoURL:  "https://example.com/repo.git",
+		RepoPath: filepath.Join(rootDir, RepoDir),
+		Nodes:    make(map[string]types.Node),
+	}
+	stateData, _ := json.Marshal(state)
+	if err := os.WriteFile(filepath.Join(metaDir, StateFile), stateData, 0644); err != nil {
+		t.Fatalf("failed to write state.json: %v", err)
+	}
+
+	// Create manager
+	wm, err := NewManager(rootDir)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	// GetConfig should fail with invalid YAML
+	_, err = wm.GetConfig()
+	if err == nil {
+		t.Errorf("GetConfig should fail with invalid YAML")
+	}
+}
+
+// TestGetConfigWithFullConfig tests GetConfig with a complete config file
+func TestGetConfigWithFullConfig(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	// Write a complete config
+	fullConfig := `version: 1
+
+workspace: custom_workspaces
+
+git:
+  main_branch: master
+  user: test_user
+  email: test@example.com
+
+agents:
+  default_provider: custom_provider
+  providers:
+    custom_provider:
+      command: 'custom "{{.Prompt}}"'
+    qwen:
+      command: 'qwen "{{.Prompt}}"'
+
+workflow:
+  default: my_workflow
+
+runtime:
+  artifact_dir: .orion/custom_runs
+`
+	configPath := filepath.Join(wm.RootPath, MetaDir, ConfigFile)
+	if err := os.WriteFile(configPath, []byte(fullConfig), 0644); err != nil {
+		t.Fatalf("failed to write config.yaml: %v", err)
+	}
+
+	config, err := wm.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig failed: %v", err)
+	}
+
+	if config.Version != 1 {
+		t.Errorf("Expected version 1, got %d", config.Version)
+	}
+	if config.Workspace != "custom_workspaces" {
+		t.Errorf("Expected workspace 'custom_workspaces', got '%s'", config.Workspace)
+	}
+	if config.Git.MainBranch != "master" {
+		t.Errorf("Expected main_branch 'master', got '%s'", config.Git.MainBranch)
+	}
+	if config.Git.User != "test_user" {
+		t.Errorf("Expected user 'test_user', got '%s'", config.Git.User)
+	}
+	if config.Git.Email != "test@example.com" {
+		t.Errorf("Expected email 'test@example.com', got '%s'", config.Git.Email)
+	}
+	if config.Agents.DefaultProvider != "custom_provider" {
+		t.Errorf("Expected default_provider 'custom_provider', got '%s'", config.Agents.DefaultProvider)
+	}
+	if config.Workflow["default"] != "my_workflow" {
+		t.Errorf("Expected workflow.default 'my_workflow', got '%s'", config.Workflow["default"])
+	}
+	if config.Runtime.ArtifactDir != ".orion/custom_runs" {
+		t.Errorf("Expected artifact_dir '.orion/custom_runs', got '%s'", config.Runtime.ArtifactDir)
+	}
+}
+
+// TestGetConfigWithPartialConfig tests GetConfig with partial config (some fields missing)
+func TestGetConfigWithPartialConfig(t *testing.T) {
+	wm, cleanup := setupTestWorkspace(t)
+	defer cleanup()
+
+	// Write a partial config (missing some fields)
+	partialConfig := `version: 1
+git:
+  main_branch: develop
+`
+	configPath := filepath.Join(wm.RootPath, MetaDir, ConfigFile)
+	if err := os.WriteFile(configPath, []byte(partialConfig), 0644); err != nil {
+		t.Fatalf("failed to write config.yaml: %v", err)
+	}
+
+	config, err := wm.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig failed: %v", err)
+	}
+
+	if config.Git.MainBranch != "develop" {
+		t.Errorf("Expected main_branch 'develop', got '%s'", config.Git.MainBranch)
+	}
+	// Missing fields should have zero values
+	if config.Git.User != "" {
+		t.Errorf("Expected empty user, got '%s'", config.Git.User)
+	}
+	if config.Workspace != "" {
+		t.Errorf("Expected empty workspace, got '%s'", config.Workspace)
 	}
 }
