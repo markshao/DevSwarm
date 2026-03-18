@@ -156,12 +156,15 @@ Examples:
 			os.Exit(1)
 		}
 
-		// Print the context
+		// Ensure our print appears before the command output by printing and flushing stdout
 		contextName := "main_repo"
 		if worktreeName != "" {
 			contextName = worktreeName
 		}
-		color.Cyan("➤ Executing command under %s/", contextName)
+		
+		// Print the context and flush to ensure our print appears before the command output
+		color.New(color.FgCyan).Fprintf(os.Stdout, "➤ Executing command under %s/\n", contextName)
+		os.Stdout.Sync()
 
 		// 执行命令
 		command := exec.Command(commandArgs[0], commandArgs[1:]...)
