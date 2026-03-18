@@ -63,6 +63,16 @@ type RuntimeConfig struct {
 	ArtifactDir string `yaml:"artifact_dir"`
 }
 
+// --- Workflow V2 Types ---
+
+// StepType represents the type of a workflow step
+type StepType string
+
+const (
+	StepTypeAgent StepType = "agent" // AI Agent execution step
+	StepTypeBash  StepType = "bash"  // Bash command execution step
+)
+
 // Workflow represents a workflow definition (e.g. workflows/default.yaml)
 type Workflow struct {
 	Name     string          `yaml:"name"`
@@ -74,12 +84,36 @@ type WorkflowTrigger struct {
 	Event string `yaml:"event"`
 }
 
+// PipelineStep represents a single step in the workflow pipeline
 type PipelineStep struct {
 	ID        string   `yaml:"id"`
-	Agent     string   `yaml:"agent"`
-	Branch    string   `yaml:"branch"`
-	Suffix    string   `yaml:"suffix"`
+	Type      StepType `yaml:"type,omitempty"` // "agent" or "bash", defaults to "agent" for backward compat
 	DependsOn []string `yaml:"depends_on,omitempty"`
+
+	// Agent Step fields (type = "agent" or empty)
+	Agent      string `yaml:"agent"`       // Agent configuration name (e.g., "ut-agent")
+	BaseBranch string `yaml:"base-branch"` // Base branch for shadow branch creation, required for agent steps
+
+	// Bash Step fields (type = "bash")
+	Run  string `yaml:"run"`  // Command to execute
+	Node string `yaml:"node"` // Target node (variable reference like "${input.node}" or "${steps.xxx.node}"), empty means run in workflow directory
+
+	// Optional environment variables for this step
+	Env map[string]string `yaml:"env,omitempty"`
+
+	// Legacy fields (deprecated, kept for backward compatibility)
+	Branch string `yaml:"branch,omitempty"` // Deprecated: replaced by base-branch
+	Suffix string `yaml:"suffix,omitempty"` // Deprecated: node name now auto-generated
+}
+
+// IsAgent returns true if this is an agent step
+func (s PipelineStep) IsAgent() bool {
+	return s.Type == StepTypeAgent || s.Type == ""
+}
+
+// IsBash returns true if this is a bash step
+func (s PipelineStep) IsBash() bool {
+	return s.Type == StepTypeBash
 }
 
 // Agent represents an agent definition (e.g. agents/ut-agent.yaml)

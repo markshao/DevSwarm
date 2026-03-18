@@ -3,7 +3,9 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -65,12 +67,23 @@ Examples:
 			os.Exit(1)
 		}
 
-		// Determine target node
+		// Determine target node (priority: --node flag > args[1] > auto-detect)
 		var targetNodeName string
 		var targetNode *types.Node
-		
-		if len(args) >= 2 {
-			// Explicitly specified node name
+
+		nodeFlag, _ := cmd.Flags().GetString("node")
+		if nodeFlag != "" {
+			// Use --node flag
+			targetNodeName = nodeFlag
+			node, exists := wm.State.Nodes[targetNodeName]
+			if !exists {
+				color.Red("Node '%s' does not exist", targetNodeName)
+				os.Exit(1)
+			}
+			targetNode = &node
+			fmt.Printf("Target node (from --node flag): %s\n", targetNodeName)
+		} else if len(args) >= 2 {
+			// Explicitly specified node name as positional arg
 			targetNodeName = args[1]
 			node, exists := wm.State.Nodes[targetNodeName]
 			if !exists {
@@ -611,8 +624,10 @@ Examples:
 
 func init() {
 	runWorkflowCmd.Flags().StringP("trigger", "t", "manual", "Trigger type (e.g. manual)")
+	runWorkflowCmd.Flags().StringP("node", "n", "", "Target node name (auto-detected if not specified)")
 	rmWorkflowCmd.Flags().BoolP("force", "f", false, "Force remove run and all its agentic nodes")
 	lsWorkflowCmd.Flags().BoolP("quiet", "q", false, "Only output run IDs (for piping)")
+	logsWorkflowCmd.Flags().BoolP("follow", "f", false, "Follow log output (tail -f style)")
 
 	rootCmd.AddCommand(workflowCmd)
 	workflowCmd.AddCommand(runWorkflowCmd)
@@ -620,6 +635,7 @@ func init() {
 	workflowCmd.AddCommand(inspectWorkflowCmd)
 	workflowCmd.AddCommand(enterWorkflowCmd)
 	workflowCmd.AddCommand(rmWorkflowCmd)
+	workflowCmd.AddCommand(logsWorkflowCmd)
 
 	workflowCmd.AddCommand(artifactsCmd)
 	artifactsCmd.AddCommand(lsArtifactsCmd)
@@ -702,4 +718,157 @@ var lsArtifactsCmd = &cobra.Command{
 			fmt.Println("  (No artifacts found)")
 		}
 	},
+}
+
+// --- Logs Command ---
+
+var logsWorkflowCmd = &cobra.Command{
+	Use:   "logs [run_id] [step_id]",
+	Short: "Show logs for a workflow run or specific step",
+	Long: `Display logs for workflow execution.
+
+Examples:
+  # Show all step logs for a run
+  orion workflow logs run-20260318-xxx
+
+  # Show logs for a specific step
+  orion workflow logs run-20260318-xxx rebase
+
+  # Follow logs (tail -f style)
+  orion workflow logs run-20260318-xxx --follow`,
+	Args: cobra.RangeArgs(1, 2),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		rootPath, err := workspace.FindWorkspaceRoot(cwd)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		wm, err := workspace.NewManager(rootPath)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		engine := workflow.NewEngine(wm)
+		runs, err := engine.ListRuns()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		var completions []string
+		for _, run := range runs {
+			desc := fmt.Sprintf("%s - %s (%s)", run.Workflow, run.Status, run.StartTime.Format("01-02 15:04"))
+			completions = append(completions, fmt.Sprintf("%s\t%s", run.ID, desc))
+		}
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		follow, _ := cmd.Flags().GetBool("follow")
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			color.Red("Error getting current directory: %v", err)
+			os.Exit(1)
+		}
+
+		rootPath, err := workspace.FindWorkspaceRoot(cwd)
+		if err != nil {
+			color.Red("Not in a Orion workspace: %v", err)
+			os.Exit(1)
+		}
+
+		wm, err := workspace.NewManager(rootPath)
+		if err != nil {
+			color.Red("Failed to load workspace: %v", err)
+			os.Exit(1)
+		}
+
+		runID := args[0]
+		engine := workflow.NewEngine(wm)
+		run, err := engine.GetRun(runID)
+		if err != nil {
+			color.Red("Run '%s' not found.", runID)
+			os.Exit(1)
+		}
+
+		// If step_id specified, show only that step's logs
+		if len(args) == 2 {
+			stepID := args[1]
+			var step *workflow.StepStatus
+			for i := range run.Steps {
+				if run.Steps[i].ID == stepID {
+					step = &run.Steps[i]
+					break
+				}
+			}
+			if step == nil {
+				color.Red("Step '%s' not found in run '%s'.", stepID, runID)
+				os.Exit(1)
+			}
+			showStepLogs(wm, runID, step, follow)
+			return
+		}
+
+		// Show all steps' logs
+		fmt.Printf("Logs for run %s:\n\n", color.CyanString(run.ID))
+		for i := range run.Steps {
+			showStepLogs(wm, runID, &run.Steps[i], false)
+			if i < len(run.Steps)-1 {
+				fmt.Println()
+			}
+		}
+	},
+}
+
+func showStepLogs(wm *workspace.WorkspaceManager, runID string, step *workflow.StepStatus, follow bool) {
+	fmt.Printf("📋 Step: %s (%s)\n", color.YellowString(step.ID), step.Type)
+	fmt.Printf("   Status: %s\n", step.Status)
+	if step.NodeName != "" {
+		fmt.Printf("   Node: %s\n", step.NodeName)
+	}
+	if step.ShadowBranch != "" {
+		fmt.Printf("   Branch: %s\n", step.ShadowBranch)
+	}
+	if step.Error != "" {
+		fmt.Printf("   Error: %s\n", color.RedString(step.Error))
+	}
+
+	// Show log file content
+	if step.LogPath != "" {
+		fmt.Println("   Log:")
+		if follow {
+			// Tail -f style
+			cmd := exec.Command("tail", "-f", step.LogPath)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			cmd.Run()
+		} else {
+			content, err := os.ReadFile(step.LogPath)
+			if err != nil {
+				fmt.Printf("   %s\n", color.HiBlackString("(log file not found: %s)", step.LogPath))
+			} else {
+				lines := strings.Split(string(content), "\n")
+				for _, line := range lines {
+					fmt.Printf("   %s\n", line)
+				}
+			}
+		}
+	} else {
+		// For agent steps without explicit log, check artifact dir
+		logPath := filepath.Join(wm.RootPath, workspace.MetaDir, workspace.RunsDir, runID, "artifacts", step.ID, "agent.log")
+		content, err := os.ReadFile(logPath)
+		if err == nil && len(content) > 0 {
+			fmt.Println("   Log:")
+			lines := strings.Split(string(content), "\n")
+			for _, line := range lines {
+				fmt.Printf("   %s\n", line)
+			}
+		}
+	}
 }

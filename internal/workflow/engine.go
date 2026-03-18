@@ -74,9 +74,14 @@ func (e *Engine) StartRun(workflowName, trigger, baseBranch, triggeredByNode str
 	}
 
 	for i, step := range wf.Pipeline {
+		stepType := "agent"
+		if step.IsBash() {
+			stepType = "bash"
+		}
 		run.Steps[i] = StepStatus{
-			ID:     step.ID,
-			Agent:  step.Agent,
+			ID:    step.ID,
+			Type:  stepType,
+			Agent: step.Agent,
 			Status: StatusPending,
 		}
 	}
