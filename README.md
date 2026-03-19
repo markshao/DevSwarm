@@ -31,6 +31,22 @@ Local Agentic DevOps means **bringing CI-like automation onto your local machine
 - **Agentic Nodes**: each pipeline step runs in its own isolated worktree + tmux session on a shadow branch.
 - **Apply Loop**: when the workflow is successful, you apply/merge the workflow result back onto your Human Node branch.
 
+### The Local Pipeline (Release Workflow Example)
+
+Orion allows you to configure `.orion/workflows/*.yaml` to define how agents interact with your codebase. A powerful built-in example is the **Release Workflow**:
+
+When you are ready to ship your feature, you can trigger:
+```bash
+orion workflow run release-workflow <node-name>
+```
+
+Under the hood, Orion parses the workflow into steps:
+1. **Agent Step (`rebase`)**: Orion creates an isolated `Agentic Node` (with its own Git Worktree on a Shadow Branch). The AI Agent rebases your feature branch onto `main`, automatically resolves conflicts, runs tests, and commits the result.
+2. **Bash Step (`commit-check`)**: A lightweight script verifies the git status to ensure the shadow branch is in a clean, committable state.
+3. **Bash Step (`merge`)**: Automatically fast-forwards or merges the resolved shadow branch back into your `Human Node`.
+
+This mechanism allows you to offload tedious tasks (like conflict resolution) to agents safely in the background, without ever polluting your main working directory.
+
 <img src="assets/diagrams/local-agentic-devops.png" alt="Local Agentic DevOps diagram" width="900" />
 
 1.  **You Code**: Work in your Human Node.
