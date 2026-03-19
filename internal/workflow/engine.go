@@ -79,9 +79,9 @@ func (e *Engine) StartRun(workflowName, trigger, baseBranch, triggeredByNode str
 			stepType = "bash"
 		}
 		run.Steps[i] = StepStatus{
-			ID:    step.ID,
-			Type:  stepType,
-			Agent: step.Agent,
+			ID:     step.ID,
+			Type:   stepType,
+			Agent:  step.Agent,
 			Status: StatusPending,
 		}
 	}
@@ -130,6 +130,103 @@ func (e *Engine) executePipeline(run *Run, wf *types.Workflow) {
 }
 
 func (e *Engine) executeStep(run *Run, step *StepStatus, stepDef *types.PipelineStep) error {
+	if stepDef.IsBash() {
+		return e.executeBashStep(run, step, stepDef)
+	}
+	return e.executeAgentStep(run, step, stepDef)
+}
+
+func (e *Engine) executeBashStep(run *Run, step *StepStatus, stepDef *types.PipelineStep) error {
+	// 1. Resolve target Node
+	var targetNodeName string
+	nodeRef := stepDef.Node
+
+	if nodeRef == "${input.node}" {
+		targetNodeName = run.TriggeredByNode
+	} else if strings.HasPrefix(nodeRef, "${steps.") && strings.HasSuffix(nodeRef, ".node}") {
+		stepID := strings.TrimSuffix(strings.TrimPrefix(nodeRef, "${steps."), ".node}")
+		for _, s := range run.Steps {
+			if s.ID == stepID {
+				targetNodeName = s.NodeName
+				break
+			}
+		}
+		if targetNodeName == "" {
+			return fmt.Errorf("could not find target node for step ID: %s", stepID)
+		}
+	} else if nodeRef != "" {
+		targetNodeName = nodeRef
+	}
+
+	// 2. Inherit ShadowBranch from dependency if applicable
+	if len(stepDef.DependsOn) > 0 {
+		depID := stepDef.DependsOn[0]
+		for _, s := range run.Steps {
+			if s.ID == depID {
+				step.ShadowBranch = s.ShadowBranch
+				break
+			}
+		}
+	}
+
+	// 3. Get worktree path
+	var worktreePath string
+	if targetNodeName != "" {
+		node, err := e.wm.GetNode(targetNodeName)
+		if err != nil {
+			return fmt.Errorf("failed to get target node %s: %w", targetNodeName, err)
+		}
+		worktreePath = node.WorktreePath
+	} else {
+		worktreePath = e.wm.State.RepoPath
+	}
+
+	// 4. Setup log file and script
+	stepArtifactDir := filepath.Join(e.wm.RootPath, workspace.MetaDir, workspace.RunsDir, run.ID, "artifacts", stepDef.ID)
+	_ = os.MkdirAll(stepArtifactDir, 0755)
+	logFile := filepath.Join(stepArtifactDir, "bash.log")
+	step.LogPath = logFile
+
+	scriptContent := fmt.Sprintf("#!/bin/bash\nset -e\nset -x\n%s\n", stepDef.Run)
+	scriptPath := filepath.Join(stepArtifactDir, "run.sh")
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+		return fmt.Errorf("failed to write bash script: %w", err)
+	}
+
+	// 5. Prepare env vars
+	env := os.Environ()
+	for k, v := range stepDef.Env {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+	env = append(env, fmt.Sprintf("ORION_RUN_ID=%s", run.ID))
+	if targetNodeName != "" {
+		env = append(env, fmt.Sprintf("ORION_TARGET_NODE=%s", targetNodeName))
+	}
+	if step.ShadowBranch != "" {
+		env = append(env, fmt.Sprintf("ORION_TARGET_BRANCH=%s", step.ShadowBranch))
+	}
+
+	// 6. Execute
+	cmd := exec.Command("/bin/bash", scriptPath)
+	cmd.Dir = worktreePath
+	cmd.Env = env
+
+	logOut, err := os.Create(logFile)
+	if err != nil {
+		return err
+	}
+	defer logOut.Close()
+	cmd.Stdout = logOut
+	cmd.Stderr = logOut
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("bash step failed: %w", err)
+	}
+
+	return nil
+}
+
+func (e *Engine) executeAgentStep(run *Run, step *StepStatus, stepDef *types.PipelineStep) error {
 	// 1. Determine Base Branch (Dependency Chaining)
 	baseBranch, err := e.resolveBaseBranch(run, stepDef)
 	if err != nil {
