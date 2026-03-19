@@ -549,3 +549,12 @@ func (wm *WorkspaceManager) FindNodeByPath(path string) (string, *types.Node, er
 
 	return "", nil, nil
 }
+
+// GetNode retrieves a node by its name
+func (wm *WorkspaceManager) GetNode(nodeName string) (*types.Node, error) {
+	node, exists := wm.State.Nodes[nodeName]
+	if !exists {
+		return nil, fmt.Errorf("node %s not found", nodeName)
+	}
+	return &node, nil
+}
