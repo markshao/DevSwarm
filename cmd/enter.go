@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"orion/internal/notification"
 	"orion/internal/workspace"
 
 	"github.com/fatih/color"
@@ -56,7 +57,19 @@ If not, it will start a new client.`,
 		}
 
 		fmt.Printf("Entering node '%s'...\n", nodeName)
-		if err := wm.EnterNode(nodeName); err != nil {
+		sessionName, err := wm.EnsureNodeSession(nodeName)
+		if err != nil {
+			color.Red("Failed to prepare node session: %v", err)
+			os.Exit(1)
+		}
+
+		if err := notification.EnsureStarted(wm.RootPath); err != nil {
+			color.Yellow("Warning: Failed to start notification service: %v", err)
+		} else if err := notification.EnsureWatcher(wm.RootPath, nodeName, sessionName); err != nil {
+			color.Yellow("Warning: Failed to register notification watcher: %v", err)
+		}
+
+		if err := wm.AttachNodeSession(nodeName); err != nil {
 			color.Red("Failed to enter node: %v", err)
 			os.Exit(1)
 		}

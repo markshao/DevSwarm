@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"orion/internal/git"
+	"orion/internal/notification"
 	"orion/internal/workspace"
 
 	"github.com/manifoldco/promptui"
@@ -102,6 +103,10 @@ Clones the repository into a 'repo' subdirectory and sets up configuration.`,
 
 		fmt.Println("Workspace initialized successfully!")
 		fmt.Printf("Orion is ready in %s\n", absPath)
+
+		if err := notification.EnsureStarted(absPath); err != nil {
+			fmt.Printf("Warning: Failed to start notification service: %v\n", err)
+		}
 	},
 }
 

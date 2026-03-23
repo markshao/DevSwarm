@@ -43,12 +43,13 @@ type State struct {
 
 // Config represents the .orion/config.yaml structure
 type Config struct {
-	Version   int          `yaml:"version"`
-	Workspace string       `yaml:"workspace"`
-	Git       GitConfig    `yaml:"git"`
-	Agents    AgentsConfig `yaml:"agents"`
-	Workflow  map[string]string
-	Runtime   RuntimeConfig `yaml:"runtime"`
+	Version       int          `yaml:"version"`
+	Workspace     string       `yaml:"workspace"`
+	Git           GitConfig    `yaml:"git"`
+	Agents        AgentsConfig `yaml:"agents"`
+	Workflow      map[string]string
+	Runtime       RuntimeConfig       `yaml:"runtime"`
+	Notifications NotificationsConfig `yaml:"notifications"`
 }
 
 type AgentsConfig struct {
@@ -64,6 +65,19 @@ type GitConfig struct {
 
 type RuntimeConfig struct {
 	ArtifactDir string `yaml:"artifact_dir"`
+}
+
+type NotificationsConfig struct {
+	Enabled          bool                            `yaml:"enabled"`
+	PollInterval     string                          `yaml:"poll_interval"`
+	SilenceThreshold string                          `yaml:"silence_threshold"`
+	ReminderInterval string                          `yaml:"reminder_interval"`
+	TailLines        int                             `yaml:"tail_lines"`
+	LLMClassifier    NotificationLLMClassifierConfig `yaml:"llm_classifier"`
+}
+
+type NotificationLLMClassifierConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 // --- Workflow V2 Types ---
