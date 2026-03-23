@@ -22,6 +22,16 @@ func (wm *WorkspaceManager) GetConfig() (*types.Config, error) {
 				Agents: types.AgentsConfig{
 					DefaultProvider: "qwen",
 				},
+				Notifications: types.NotificationsConfig{
+					Enabled:          true,
+					PollInterval:     "5s",
+					SilenceThreshold: "20s",
+					ReminderInterval: "5m",
+					TailLines:        80,
+					LLMClassifier: types.NotificationLLMClassifierConfig{
+						Enabled: true,
+					},
+				},
 			}, nil
 		}
 		return nil, fmt.Errorf("failed to read config: %w", err)

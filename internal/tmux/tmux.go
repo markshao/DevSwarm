@@ -4,9 +4,21 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 )
+
+type PaneMeta struct {
+	SessionName        string
+	WindowIndex        int
+	PaneIndex          int
+	PaneID             string
+	PaneCurrentCommand string
+	PaneTitle          string
+	PaneDead           bool
+	AlternateOn        bool
+}
 
 // SessionExists checks if a tmux session exists.
 func SessionExists(sessionName string) bool {
@@ -31,6 +43,71 @@ func SendKeys(sessionName, keys string) error {
 	return nil
 }
 
+// PaneExists checks if a tmux pane exists.
+func PaneExists(target string) bool {
+	return exec.Command("tmux", "display-message", "-p", "-t", target, "#{pane_id}").Run() == nil
+}
+
+// GetPaneMeta returns formatted metadata for a pane target.
+func GetPaneMeta(target string) (*PaneMeta, error) {
+	cmd := exec.Command("tmux", "display-message", "-p", "-t", target, "#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_id}\t#{pane_current_command}\t#{pane_title}\t#{pane_dead}\t#{alternate_on}")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pane metadata for %s: %w", target, err)
+	}
+
+	parts := strings.Split(strings.TrimSpace(string(output)), "\t")
+	if len(parts) != 8 {
+		return nil, fmt.Errorf("unexpected tmux pane metadata format for %s", target)
+	}
+
+	windowIndex, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("invalid window index for %s: %w", target, err)
+	}
+	paneIndex, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return nil, fmt.Errorf("invalid pane index for %s: %w", target, err)
+	}
+
+	return &PaneMeta{
+		SessionName:        parts[0],
+		WindowIndex:        windowIndex,
+		PaneIndex:          paneIndex,
+		PaneID:             parts[3],
+		PaneCurrentCommand: parts[4],
+		PaneTitle:          parts[5],
+		PaneDead:           parts[6] == "1",
+		AlternateOn:        parts[7] == "1",
+	}, nil
+}
+
+// GetPrimaryPane returns the pane metadata for the initial pane in a session.
+func GetPrimaryPane(sessionName string) (*PaneMeta, error) {
+	return GetPaneMeta(fmt.Sprintf("%s:0.0", sessionName))
+}
+
+// CapturePane captures pane contents, preferring alternate screen if requested.
+func CapturePane(target string, alternate bool, lines int) (string, error) {
+	start := "-"
+	if lines > 0 {
+		start = fmt.Sprintf("-%d", lines)
+	}
+
+	args := []string{"capture-pane"}
+	if alternate {
+		args = append(args, "-a")
+	}
+	args = append(args, "-p", "-J", "-S", start, "-E", "-", "-t", target)
+
+	cmd := exec.Command("tmux", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to capture pane %s: %w", target, err)
+	}
+	return string(output), nil
+}
+
 // AttachSession replaces the current process with tmux attach.
 // WARNING: This function does not return if successful!
 func AttachSession(sessionName string) error {
@@ -44,7 +121,7 @@ func AttachSession(sessionName string) error {
 	if err := syscall.Exec(tmuxPath, args, os.Environ()); err != nil {
 		return fmt.Errorf("failed to attach to session: %w", err)
 	}
-	
+
 	return nil // Should not reach here
 }
 
@@ -94,7 +171,7 @@ func KillSession(sessionName string) error {
 	if !SessionExists(sessionName) {
 		return nil
 	}
-	
+
 	cmd := exec.Command("tmux", "kill-session", "-t", sessionName)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		// Sometimes has-session returns true but kill fails if race condition, so double check

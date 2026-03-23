@@ -49,8 +49,6 @@ func NewClient() (*Client, error) {
 
 // GenerateSpawnPlan 根据用户描述生成分支和 node 名称
 func (c *Client) GenerateSpawnPlan(description string) (*SpawnPlan, error) {
-	ctx := context.Background()
-
 	// 构建 system prompt
 	systemPrompt := `你是一个 Git 分支命名专家。根据用户的开发任务描述，生成合适的分支名、node 名和任务摘要 label。
 
@@ -80,6 +78,19 @@ label 规则:
 
 请分析上述描述，生成合适的分支名、node 名、基础分支名和一句话任务摘要 label。`, description)
 
+	content, err := c.GenerateText(systemPrompt, userPrompt, 0.2, 256)
+	if err != nil {
+		return nil, err
+	}
+
+	// 解析 JSON 响应
+	return parseSpawnPlan(content)
+}
+
+// GenerateText sends a system and user prompt and returns the first text choice.
+func (c *Client) GenerateText(systemPrompt, userPrompt string, temperature float64, maxTokens int) (string, error) {
+	ctx := context.Background()
+
 	// 调用 LLM
 	messages := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
@@ -87,20 +98,17 @@ label 规则:
 	}
 
 	response, err := c.llm.GenerateContent(ctx, messages,
-		llms.WithTemperature(0.2),
-		llms.WithMaxTokens(256),
+		llms.WithTemperature(temperature),
+		llms.WithMaxTokens(maxTokens),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("LLM call failed: %w", err)
+		return "", fmt.Errorf("LLM call failed: %w", err)
 	}
 
 	if len(response.Choices) == 0 {
-		return nil, fmt.Errorf("no response from LLM")
+		return "", fmt.Errorf("no response from LLM")
 	}
-
-	// 解析 JSON 响应
-	content := response.Choices[0].Content
-	return parseSpawnPlan(content)
+	return response.Choices[0].Content, nil
 }
 
 // parseSpawnPlan 解析 LLM 返回的 JSON

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"orion/internal/git"
+	"orion/internal/notification"
 	"orion/internal/tmux"
 	"orion/internal/types"
 	"orion/internal/vscode"
@@ -154,6 +155,15 @@ agents:
       command: 'qwen "{{.Prompt}}" -y'
     kimi:
       command: 'kimi -y -p "{{.Prompt}}"'
+
+notifications:
+  enabled: true
+  poll_interval: 5s
+  silence_threshold: 20s
+  reminder_interval: 5m
+  tail_lines: 80
+  llm_classifier:
+    enabled: true
 `
 	if err := os.WriteFile(filepath.Join(wm.RootPath, MetaDir, ConfigFile), []byte(configContent), 0644); err != nil {
 		return err
@@ -433,10 +443,10 @@ func (wm *WorkspaceManager) applyGitConfigToWorktree(worktreePath string) error 
 }
 
 // EnterNode launches or attaches to a tmux session for the given node.
-func (wm *WorkspaceManager) EnterNode(nodeName string) error {
+func (wm *WorkspaceManager) EnsureNodeSession(nodeName string) (string, error) {
 	node, exists := wm.State.Nodes[nodeName]
 	if !exists {
-		return fmt.Errorf("node '%s' does not exist", nodeName)
+		return "", fmt.Errorf("node '%s' does not exist", nodeName)
 	}
 
 	// Use node's configured session name if available, otherwise construct default
@@ -445,21 +455,50 @@ func (wm *WorkspaceManager) EnterNode(nodeName string) error {
 		sessionName = fmt.Sprintf("orion-%s", nodeName)
 	}
 
+	if !tmux.SessionExists(sessionName) {
+		if err := tmux.NewSession(sessionName, node.WorktreePath); err != nil {
+			return "", fmt.Errorf("failed to create session: %w", err)
+		}
+	}
+
+	if node.TmuxSession != sessionName {
+		node.TmuxSession = sessionName
+		wm.State.Nodes[nodeName] = node
+		if err := wm.SaveState(); err != nil {
+			return "", fmt.Errorf("failed to persist node session: %w", err)
+		}
+	}
+
+	return sessionName, nil
+}
+
+// AttachNodeSession attaches or switches to an existing node session.
+func (wm *WorkspaceManager) AttachNodeSession(nodeName string) error {
+	node, exists := wm.State.Nodes[nodeName]
+	if !exists {
+		return fmt.Errorf("node '%s' does not exist", nodeName)
+	}
+
+	sessionName := node.TmuxSession
+	if sessionName == "" {
+		sessionName = fmt.Sprintf("orion-%s", nodeName)
+	}
+
 	// Check if we are already inside tmux
 	if tmux.IsInsideTmux() {
-		// If inside tmux, we should switch client instead of attaching
-		// But first ensure the target session exists
-		if !tmux.SessionExists(sessionName) {
-			if err := tmux.NewSession(sessionName, node.WorktreePath); err != nil {
-				return fmt.Errorf("failed to create session: %w", err)
-			}
-		}
 		return tmux.SwitchClient(sessionName)
 	}
 
-	// If outside tmux, attach (or create and attach)
-	// This will replace the current process
-	return tmux.EnsureAndAttach(sessionName, node.WorktreePath)
+	// If outside tmux, attach.
+	return tmux.AttachSession(sessionName)
+}
+
+// EnterNode launches or attaches to a tmux session for the given node.
+func (wm *WorkspaceManager) EnterNode(nodeName string) error {
+	if _, err := wm.EnsureNodeSession(nodeName); err != nil {
+		return err
+	}
+	return wm.AttachNodeSession(nodeName)
 }
 
 // RemoveNode removes a node and cleans up resources.
@@ -471,6 +510,7 @@ func (wm *WorkspaceManager) RemoveNode(nodeName string) error {
 
 	// 1. Kill Tmux Session
 	sessionName := fmt.Sprintf("orion-%s", nodeName)
+	_ = notification.UnregisterWatcher(wm.RootPath, nodeName)
 	if err := tmux.KillSession(sessionName); err != nil {
 		fmt.Printf("Warning: Failed to kill tmux session: %v\n", err)
 	}
