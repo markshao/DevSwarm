@@ -159,6 +159,16 @@ func UnregisterWatcher(rootPath, nodeName string) error {
 	})
 }
 
+func ClearWatchers(rootPath string) (int, error) {
+	var removed int
+	err := UpdateRegistry(rootPath, func(registry *Registry) error {
+		removed = len(registry.Watchers)
+		registry.Watchers = make(map[string]*Watcher)
+		return nil
+	})
+	return removed, err
+}
+
 func AcknowledgeWaitEvent(rootPath, nodeName string) error {
 	return UpdateRegistry(rootPath, func(registry *Registry) error {
 		watcher, ok := registry.Watchers[nodeName]
@@ -173,6 +183,9 @@ func AcknowledgeWaitEvent(rootPath, nodeName string) error {
 func Run(rootPath string) error {
 	cfg, err := LoadServiceConfig(rootPath)
 	if err != nil {
+		return err
+	}
+	if err := configureNotifier(cfg); err != nil {
 		return err
 	}
 	if err := ensureRuntimeDir(rootPath); err != nil {
@@ -226,6 +239,11 @@ func Run(rootPath string) error {
 		case <-ticker.C:
 			cfg, err = LoadServiceConfig(rootPath)
 			if err != nil {
+				status.LastError = err.Error()
+				_ = WriteStatus(rootPath, status)
+				continue
+			}
+			if err := configureNotifier(cfg); err != nil {
 				status.LastError = err.Error()
 				_ = WriteStatus(rootPath, status)
 				continue

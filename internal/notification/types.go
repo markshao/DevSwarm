@@ -13,12 +13,24 @@ const (
 
 type ServiceConfig struct {
 	Enabled             bool
+	Provider            string
 	PollInterval        time.Duration
 	SilenceThreshold    time.Duration
 	ReminderInterval    time.Duration
 	SimilarityThreshold float64
 	TailLines           int
 	LLMEnabled          bool
+	Lark                LarkConfig
+}
+
+type LarkConfig struct {
+	AppID     string
+	AppSecret string
+	BaseURL   string
+	OpenID    string
+	ChatID    string
+	UrgentApp bool
+	CardTitle string
 }
 
 type Watcher struct {
@@ -61,4 +73,11 @@ type ServiceStatus struct {
 type Classification struct {
 	State  string `json:"state"`
 	Reason string `json:"reason"`
+}
+
+func HasPendingWaitEvent(watcher *Watcher) bool {
+	if watcher == nil {
+		return false
+	}
+	return watcher.WaitEventID > watcher.AckedWaitEventID
 }

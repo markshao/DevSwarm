@@ -24,7 +24,7 @@ type Client struct {
 	model string
 }
 
-// NewClient 创建 AI 客户端，从 ~/.orion.conf 读取配置
+// NewClient 创建 AI 客户端，从 ~/.orion.yaml 读取配置
 func NewClient() (*Client, error) {
 	cfg, err := LoadConfig()
 	if err != nil {

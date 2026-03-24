@@ -196,3 +196,47 @@ func TestTransitionWatcherStateIncrementsWaitEventOnlyOnEntry(t *testing.T) {
 		t.Fatalf("expected second wait event id to be 2, got %d", watcher.WaitEventID)
 	}
 }
+
+func TestHasPendingWaitEventStickyUntilAck(t *testing.T) {
+	watcher := &Watcher{
+		State:            StateRunning,
+		WaitEventID:      3,
+		AckedWaitEventID: 2,
+	}
+	if !HasPendingWaitEvent(watcher) {
+		t.Fatalf("expected pending wait event when wait event id is newer than ack")
+	}
+
+	watcher.AckedWaitEventID = 3
+	if HasPendingWaitEvent(watcher) {
+		t.Fatalf("expected no pending wait event after ack catches up")
+	}
+}
+
+func TestClearWatchers(t *testing.T) {
+	rootPath := t.TempDir()
+
+	if err := UpdateRegistry(rootPath, func(registry *Registry) error {
+		registry.Watchers["a"] = &Watcher{NodeName: "a"}
+		registry.Watchers["b"] = &Watcher{NodeName: "b"}
+		return nil
+	}); err != nil {
+		t.Fatalf("failed to seed watcher registry: %v", err)
+	}
+
+	removed, err := ClearWatchers(rootPath)
+	if err != nil {
+		t.Fatalf("ClearWatchers returned error: %v", err)
+	}
+	if removed != 2 {
+		t.Fatalf("expected removed watcher count 2, got %d", removed)
+	}
+
+	registry, err := ReadRegistry(rootPath)
+	if err != nil {
+		t.Fatalf("failed to read watcher registry: %v", err)
+	}
+	if len(registry.Watchers) != 0 {
+		t.Fatalf("expected watcher registry to be empty after cleanup, got %d", len(registry.Watchers))
+	}
+}

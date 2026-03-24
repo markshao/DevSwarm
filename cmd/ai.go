@@ -49,11 +49,12 @@ Examples:
   orion ai "refactor authentication module"
 
 Configuration:
-  Configure AI model info in ~/.orion.conf:
+  Configure AI model info in ~/.orion.yaml:
 
-  api_key: "$MOONSHOT_API_KEY"
-  base_url: "https://api.moonshot.cn/v1"
-  model: "kimi-k2-turbo-preview"
+  llm:
+    api_key: "${MOONSHOT_API_KEY}"
+    base_url: "https://api.moonshot.cn/v1"
+    model: "kimi-k2-turbo-preview"
 
   api_key supports direct input or environment variable reference (e.g., $MOONSHOT_API_KEY)`,
 	Args: cobra.ExactArgs(1),
@@ -64,7 +65,7 @@ Configuration:
 		client, err := ai.NewClient()
 		if err != nil {
 			fmt.Printf("❌ %v\n", err)
-			fmt.Println("\nHint: Please configure AI model info in ~/.orion.conf")
+			fmt.Println("\nHint: Please configure AI model info in ~/.orion.yaml")
 			fmt.Println("\nExample config:")
 			fmt.Println(ai.ExampleConfig())
 			os.Exit(1)

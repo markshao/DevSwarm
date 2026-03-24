@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"orion/internal/globalconfig"
 	"orion/internal/types"
 
 	"gopkg.in/yaml.v3"
@@ -14,12 +15,18 @@ import (
 func defaultServiceConfig() ServiceConfig {
 	return ServiceConfig{
 		Enabled:             true,
+		Provider:            "macos",
 		PollInterval:        5 * time.Second,
 		SilenceThreshold:    20 * time.Second,
 		ReminderInterval:    5 * time.Minute,
 		SimilarityThreshold: 0.99,
 		TailLines:           80,
 		LLMEnabled:          true,
+		Lark: LarkConfig{
+			BaseURL:   "https://open.feishu.cn",
+			UrgentApp: true,
+			CardTitle: "boss, 我想干活",
+		},
 	}
 }
 
@@ -50,11 +57,18 @@ func LoadServiceConfig(rootPath string) (ServiceConfig, error) {
 		if enabled, ok := notificationsRaw["enabled"].(bool); ok {
 			cfg.Enabled = enabled
 		}
+		if provider, ok := notificationsRaw["provider"].(string); ok && provider != "" {
+			cfg.Provider = provider
+		}
 		if llmRaw, ok := notificationsRaw["llm_classifier"].(map[string]interface{}); ok {
 			if enabled, ok := llmRaw["enabled"].(bool); ok {
 				cfg.LLMEnabled = enabled
 			}
 		}
+	}
+
+	if workspaceCfg.Notifications.Provider != "" {
+		cfg.Provider = workspaceCfg.Notifications.Provider
 	}
 
 	if workspaceCfg.Notifications.PollInterval != "" {
@@ -83,6 +97,37 @@ func LoadServiceConfig(rootPath string) (ServiceConfig, error) {
 	}
 	if workspaceCfg.Notifications.TailLines > 0 {
 		cfg.TailLines = workspaceCfg.Notifications.TailLines
+	}
+	globalCfg, err := globalconfig.LoadOptional()
+	if err != nil {
+		return ServiceConfig{}, fmt.Errorf("failed to load global config: %w", err)
+	}
+	if globalCfg != nil {
+		if globalCfg.Notifications.Provider != "" {
+			cfg.Provider = globalCfg.Notifications.Provider
+		}
+		globalLark := globalCfg.Notifications.Lark
+		if globalLark.AppID != "" {
+			cfg.Lark.AppID = globalLark.AppID
+		}
+		if globalLark.AppSecret != "" {
+			cfg.Lark.AppSecret = globalLark.AppSecret
+		}
+		if globalLark.BaseURL != "" {
+			cfg.Lark.BaseURL = globalLark.BaseURL
+		}
+		if globalLark.OpenID != "" {
+			cfg.Lark.OpenID = globalLark.OpenID
+		}
+		if globalLark.ChatID != "" {
+			cfg.Lark.ChatID = globalLark.ChatID
+		}
+		if globalLark.UrgentApp != nil {
+			cfg.Lark.UrgentApp = *globalLark.UrgentApp
+		}
+		if globalLark.CardTitle != "" {
+			cfg.Lark.CardTitle = globalLark.CardTitle
+		}
 	}
 	return cfg, nil
 }

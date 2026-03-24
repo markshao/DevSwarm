@@ -88,3 +88,9 @@ func TestHeuristicClassifyFirstSnapshot(t *testing.T) {
 		t.Fatalf("expected first snapshot to remain running, got %s", classification.State)
 	}
 }
+
+func TestMapLLMStateCompletedIdleReturnsError(t *testing.T) {
+	if _, err := mapLLMState("completed_idle", "done and waiting"); err == nil {
+		t.Fatalf("expected completed_idle to be rejected")
+	}
+}
