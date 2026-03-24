@@ -146,13 +146,12 @@ func (c *LLMClassifier) Classify(nodeName, screen string, stableFor time.Duratio
 
 Return JSON only:
 {
-  "state": "waiting_input|completed_idle|still_working|unknown",
+  "state": "waiting_input|still_working|unknown",
   "reason": "short reason"
 }
 
 Definitions:
-- waiting_input: the screen is clearly asking the human to confirm, choose, approve, or provide input.
-- completed_idle: the agent appears finished and is not asking for more input.
+- waiting_input: human attention is needed now. This includes explicit input prompts and finished/idle states where user review or next action is expected.
 - still_working: the agent appears to still be processing or actively working.
 - unknown: not enough evidence.
 
@@ -178,16 +177,18 @@ Be conservative. Only choose waiting_input if the terminal clearly requests user
 		return Classification{}, fmt.Errorf("failed to parse LLM classification: %w", err)
 	}
 
-	switch out.State {
+	return mapLLMState(out.State, strings.TrimSpace(out.Reason))
+}
+
+func mapLLMState(state, reason string) (Classification, error) {
+	switch state {
 	case "waiting_input":
-		return Classification{State: StateWaitingInput, Reason: strings.TrimSpace(out.Reason)}, nil
-	case "completed_idle":
-		return Classification{State: StateCompletedIdle, Reason: strings.TrimSpace(out.Reason)}, nil
+		return Classification{State: StateWaitingInput, Reason: reason}, nil
 	case "still_working":
-		return Classification{State: StateRunning, Reason: strings.TrimSpace(out.Reason)}, nil
+		return Classification{State: StateRunning, Reason: reason}, nil
 	case "unknown":
-		return Classification{State: StateUnknown, Reason: strings.TrimSpace(out.Reason)}, nil
+		return Classification{State: StateUnknown, Reason: reason}, nil
 	default:
-		return Classification{}, fmt.Errorf("unexpected LLM state %q", out.State)
+		return Classification{}, fmt.Errorf("unexpected LLM state %q", state)
 	}
 }

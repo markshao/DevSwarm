@@ -24,6 +24,7 @@ func (wm *WorkspaceManager) GetConfig() (*types.Config, error) {
 				},
 				Notifications: types.NotificationsConfig{
 					Enabled:             true,
+					Provider:            "macos",
 					PollInterval:        "5s",
 					SilenceThreshold:    "20s",
 					ReminderInterval:    "5m",

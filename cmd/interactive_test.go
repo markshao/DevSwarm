@@ -6,7 +6,7 @@ import (
 	"orion/internal/types"
 )
 
-func TestBuildNodeSelectionItemsUsesNameAndLabelOnly(t *testing.T) {
+func TestBuildNodeSelectionItemsUsesNameLabelAndStatusColumns(t *testing.T) {
 	nodes := map[string]types.Node{
 		"alpha": {
 			Label:         "review auth flow",
@@ -29,16 +29,19 @@ func TestBuildNodeSelectionItemsUsesNameAndLabelOnly(t *testing.T) {
 	if got[1].Name != "beta" || got[1].Label != "-" {
 		t.Fatalf("unexpected second item: %#v", got[1])
 	}
+	if got[0].Status != "-" || got[1].Status != "-" {
+		t.Fatalf("expected status '-' for non-pending nodes, got %#v and %#v", got[0].Status, got[1].Status)
+	}
 	if got[0].NameColumn != "alpha" {
 		t.Fatalf("expected alpha name column to be unpadded, got %q", got[0].NameColumn)
 	}
 	if got[1].NameColumn != "beta " {
 		t.Fatalf("expected beta name column to be padded, got %q", got[1].NameColumn)
 	}
-	if got[0].Row != "alpha  review auth flow" {
+	if got[0].Row != "alpha  review auth flow  -" {
 		t.Fatalf("unexpected alpha row: %q", got[0].Row)
 	}
-	if got[1].Row != "beta   -" {
+	if got[1].Row != "beta   -                 -" {
 		t.Fatalf("unexpected beta row: %q", got[1].Row)
 	}
 }
@@ -63,12 +66,12 @@ func TestNormalizeNodeLabel(t *testing.T) {
 	}
 }
 
-func TestBuildNodeSelectionLabelPendingWait(t *testing.T) {
-	if got := buildNodeSelectionLabel("review auth flow", true); got != "[wait] review auth flow" {
-		t.Fatalf("unexpected pending wait label: %q", got)
+func TestBuildNodeSelectionStatus(t *testing.T) {
+	if got := buildNodeSelectionStatus(true); got != "wait-for-input" {
+		t.Fatalf("unexpected pending wait status: %q", got)
 	}
-	if got := buildNodeSelectionLabel("", true); got != "[wait] -" {
-		t.Fatalf("unexpected pending wait label for empty input: %q", got)
+	if got := buildNodeSelectionStatus(false); got != "-" {
+		t.Fatalf("unexpected non-pending status: %q", got)
 	}
 }
 
@@ -108,8 +111,26 @@ func TestBuildNodeSelectionItemsPrioritizesPendingWait(t *testing.T) {
 	if got[0].Name != "beta" || !got[0].PendingWait {
 		t.Fatalf("expected pending wait node first, got %#v", got[0])
 	}
-	if got[0].Label != "[wait] fix tests" {
+	if got[0].Label != "fix tests" {
 		t.Fatalf("unexpected pending wait row label: %q", got[0].Label)
+	}
+	if got[0].Status != "wait-for-input" {
+		t.Fatalf("unexpected pending wait status: %q", got[0].Status)
+	}
+}
+
+func TestBuildNodeSelectionItemsPendingCanExistOutsideWaitingState(t *testing.T) {
+	nodes := map[string]types.Node{
+		"alpha": {Label: "review auth flow"},
+		"beta":  {Label: "fix tests"},
+	}
+
+	got := buildNodeSelectionItems(nodes, []string{"alpha", "beta"}, map[string]bool{"alpha": true})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 selection items, got %d", len(got))
+	}
+	if got[0].Name != "alpha" || !got[0].PendingWait {
+		t.Fatalf("expected sticky pending node first, got %#v", got[0])
 	}
 }
 

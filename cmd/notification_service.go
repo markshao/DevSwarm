@@ -134,7 +134,7 @@ var notificationServiceListWatchersCmd = &cobra.Command{
 				label = "-"
 			}
 			pending := "-"
-			if watcher.State == notification.StateWaitingInput && watcher.WaitEventID > watcher.AckedWaitEventID {
+			if notification.HasPendingWaitEvent(watcher) {
 				pending = "wait-input"
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n",
@@ -151,6 +151,26 @@ var notificationServiceListWatchersCmd = &cobra.Command{
 			)
 		}
 		w.Flush()
+	},
+}
+
+var notificationServiceCleanWatchersCmd = &cobra.Command{
+	Use:   "clean-watchers",
+	Short: "Clean all registered notification watchers",
+	Run: func(cmd *cobra.Command, args []string) {
+		rootPath, err := resolveWorkspaceRoot()
+		if err != nil {
+			color.Red("Failed to resolve workspace: %v", err)
+			os.Exit(1)
+		}
+
+		removed, err := notification.ClearWatchers(rootPath)
+		if err != nil {
+			color.Red("Failed to clean watcher registry: %v", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Cleaned %d watcher(s).\n", removed)
 	},
 }
 
@@ -178,6 +198,7 @@ func init() {
 	notificationServiceCmd.AddCommand(notificationServiceStopCmd)
 	notificationServiceCmd.AddCommand(notificationServiceStatusCmd)
 	notificationServiceCmd.AddCommand(notificationServiceListWatchersCmd)
+	notificationServiceCmd.AddCommand(notificationServiceCleanWatchersCmd)
 	notificationServiceCmd.AddCommand(notificationServiceRunCmd)
 	rootCmd.AddCommand(notificationServiceCmd)
 }

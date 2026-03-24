@@ -158,6 +158,7 @@ agents:
 
 notifications:
   enabled: true
+  provider: macos
   poll_interval: 5s
   silence_threshold: 20s
   reminder_interval: 5m

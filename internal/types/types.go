@@ -58,6 +58,7 @@ type RuntimeConfig struct {
 
 type NotificationsConfig struct {
 	Enabled             bool                            `yaml:"enabled"`
+	Provider            string                          `yaml:"provider"`
 	PollInterval        string                          `yaml:"poll_interval"`
 	SilenceThreshold    string                          `yaml:"silence_threshold"`
 	ReminderInterval    string                          `yaml:"reminder_interval"`
