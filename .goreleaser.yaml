@@ -1,6 +1,9 @@
 version: 2
 project_name: orion
 
+release:
+  replace_existing_artifacts: true
+
 builds:
   - env:
       - CGO_ENABLED=0
@@ -18,7 +21,8 @@ builds:
       - -X orion/internal/version.Date={{.Date}}
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     # Use a standard naming convention to make it easy for install.sh to guess the URL
     # e.g., orion_darwin_arm64.tar.gz
     name_template: >-
