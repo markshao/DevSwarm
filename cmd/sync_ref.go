@@ -32,6 +32,23 @@ func fetchOrigin(repoPath string, stdout, stderr io.Writer) error {
 	return nil
 }
 
+func fetchOriginBranch(repoPath, branch string, stdout, stderr io.Writer) error {
+	fmt.Fprintf(stdout, "Fetching origin/%s...\n", branch)
+	fetchOutput, err := git.FetchBranchWithOutput(repoPath, branch)
+	if err != nil {
+		if strings.TrimSpace(fetchOutput) != "" {
+			fmt.Fprint(stderr, fetchOutput)
+		}
+		return err
+	}
+	if strings.TrimSpace(fetchOutput) != "" {
+		fmt.Fprint(stdout, fetchOutput)
+	} else {
+		fmt.Fprintln(stdout, "Already up to date.")
+	}
+	return nil
+}
+
 func defaultMainBranch(wm *workspace.WorkspaceManager) string {
 	cfg, err := wm.GetConfig()
 	if err == nil && strings.TrimSpace(cfg.Git.MainBranch) != "" {
@@ -42,14 +59,14 @@ func defaultMainBranch(wm *workspace.WorkspaceManager) string {
 
 func syncBranchFromOrigin(wm *workspace.WorkspaceManager, branch string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "Syncing workspace branch '%s' from origin/%s into repo.git\n", branch, branch)
-	if err := fetchOrigin(wm.State.RepoPath, stdout, stderr); err != nil {
+	if err := fetchOriginBranch(wm.State.RepoPath, branch, stdout, stderr); err != nil {
 		return err
 	}
 
 	remoteRefs := []string{
+		"FETCH_HEAD",
 		"refs/remotes/origin/" + branch,
 		"origin/" + branch,
-		"refs/heads/" + branch,
 	}
 	var (
 		sha      string
@@ -66,7 +83,7 @@ func syncBranchFromOrigin(wm *workspace.WorkspaceManager, branch string, stdout,
 		}
 	}
 	if !resolved {
-		return fmt.Errorf("failed to resolve origin branch '%s' after fetch", branch)
+		return fmt.Errorf("failed to resolve fetched origin/%s commit after fetch", branch)
 	}
 
 	ref := "refs/heads/" + branch

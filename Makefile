@@ -39,8 +39,15 @@ github-release:
 		echo "Usage: make github-release tag=v1.0.0-alpha.11"; \
 		exit 1; \
 	fi
-	@branch=$${branch:-main}; \
+	@branch=main; \
 	orion sync-ref --branch $$branch; \
+	local_sha=$$(orion run git rev-parse refs/heads/$$branch); \
+	remote_sha=$$(orion run git rev-parse FETCH_HEAD^{commit}); \
+	if [ "$$local_sha" != "$$remote_sha" ]; then \
+		echo "Error: repo.git refs/heads/$$branch ($$local_sha) is not at fetched origin/$$branch ($$remote_sha)"; \
+		exit 1; \
+	fi; \
+	echo "Verified refs/heads/$$branch is synced to fetched origin/$$branch: $$local_sha"; \
 	echo "Tagging refs/heads/$$branch as $(tag)"; \
 	orion run git tag $(tag) refs/heads/$$branch; \
 	echo "Pushing tag $(tag)"; \

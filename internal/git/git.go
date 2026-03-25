@@ -182,6 +182,17 @@ func FetchWithOutput(repoPath string) (string, error) {
 	return string(output), nil
 }
 
+// FetchBranchWithOutput fetches a specific branch from origin and returns git's output.
+func FetchBranchWithOutput(repoPath, branch string) (string, error) {
+	cmd := exec.Command("git", "fetch", "origin", "--prune", branch)
+	cmd.Dir = repoPath
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output), fmt.Errorf("git fetch origin %s failed: %s: %w", branch, string(output), err)
+	}
+	return string(output), nil
+}
+
 // ResolveRef returns the commit SHA for a ref.
 func ResolveRef(repoPath, ref string) (string, error) {
 	cmd := exec.Command("git", "rev-parse", "--verify", ref+"^{commit}")
