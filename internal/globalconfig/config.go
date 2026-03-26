@@ -30,12 +30,21 @@ type NotificationsConfig struct {
 	ReminderInterval    string                          `yaml:"reminder_interval"`
 	SimilarityThreshold float64                         `yaml:"similarity_threshold"`
 	TailLines           int                             `yaml:"tail_lines"`
+	LastBlock           NotificationLastBlockConfig     `yaml:"last_block"`
 	LLMClassifier       NotificationLLMClassifierConfig `yaml:"llm_classifier"`
 	Lark                NotificationLark                `yaml:"lark"`
 }
 
 type NotificationLLMClassifierConfig struct {
 	Enabled *bool `yaml:"enabled"`
+}
+
+type NotificationLastBlockConfig struct {
+	Enabled  *bool  `yaml:"enabled"`
+	Mode     string `yaml:"mode"`
+	Prefix   string `yaml:"prefix"`
+	Regex    string `yaml:"regex"`
+	MaxChars int    `yaml:"max_chars"`
 }
 
 type NotificationLark struct {

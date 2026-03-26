@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -119,7 +120,7 @@ var notificationServiceListWatchersCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NODE\tLABEL\tSESSION\tPANE\tSTATE\tPENDING\tLAST CHANGE\tLAST NOTIFY\tNOTIFY COUNT\tREASON")
+		fmt.Fprintln(w, "NODE\tLABEL\tSESSION\tPANE\tSTATE\tPENDING\tMUTED\tLAST CHANGE\tLAST NOTIFY\tNOTIFY COUNT\tREASON\tLAST BLOCK")
 		for _, watcher := range registry.Watchers {
 			lastChange := "-"
 			if !watcher.LastChangeAt.IsZero() {
@@ -137,17 +138,27 @@ var notificationServiceListWatchersCmd = &cobra.Command{
 			if notification.HasPendingWaitEvent(watcher) {
 				pending = "wait-input"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n",
+			muted := "-"
+			if watcher.MutedWaitEventID >= watcher.WaitEventID && watcher.WaitEventID > 0 {
+				muted = "muted"
+			}
+			lastBlock := "-"
+			if watcher.LastAgentBlock != "" {
+				lastBlock = strings.ReplaceAll(watcher.LastAgentBlock, "\n", "\\n")
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
 				watcher.NodeName,
 				label,
 				watcher.SessionName,
 				watcher.PaneID,
 				watcher.State,
 				pending,
+				muted,
 				lastChange,
 				lastNotify,
 				watcher.NotifyCount,
 				watcher.LastReason,
+				lastBlock,
 			)
 		}
 		w.Flush()

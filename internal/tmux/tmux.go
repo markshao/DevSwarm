@@ -43,6 +43,24 @@ func SendKeys(sessionName, keys string) error {
 	return nil
 }
 
+// SendLiteralKeysToPane sends literal text to a target pane without pressing Enter.
+func SendLiteralKeysToPane(targetPane, text string) error {
+	cmd := exec.Command("tmux", "send-keys", "-t", targetPane, "-l", text)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to send literal keys to pane %s: %s: %w", targetPane, string(output), err)
+	}
+	return nil
+}
+
+// SendEnterToPane sends Enter to a target pane.
+func SendEnterToPane(targetPane string) error {
+	cmd := exec.Command("tmux", "send-keys", "-t", targetPane, "C-m")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to send enter to pane %s: %s: %w", targetPane, string(output), err)
+	}
+	return nil
+}
+
 // PaneExists checks if a tmux pane exists.
 func PaneExists(target string) bool {
 	return exec.Command("tmux", "display-message", "-p", "-t", target, "#{pane_id}").Run() == nil

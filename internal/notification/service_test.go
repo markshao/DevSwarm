@@ -141,7 +141,7 @@ func TestApplyWatcherObservationResetsWaitingStateOnScreenChange(t *testing.T) {
 func TestApplyWatcherObservationTreatsNewWaitingInputAsNewEvent(t *testing.T) {
 	origNotify := sendWatcherNotification
 	defer func() { sendWatcherNotification = origNotify }()
-	sendWatcherNotification = func(nodeName, label, reason string) error { return nil }
+	sendWatcherNotification = func(watcher *Watcher, reason string) error { return nil }
 
 	now := time.Now()
 	watcher := &Watcher{
@@ -173,6 +173,52 @@ func TestApplyWatcherObservationTreatsNewWaitingInputAsNewEvent(t *testing.T) {
 	}
 	if watcher.LastNotifyAt != now {
 		t.Fatalf("expected notify time to be recorded")
+	}
+}
+
+func TestApplyWatcherObservationKeepsWaitingInputStickyOnMinorChange(t *testing.T) {
+	now := time.Now()
+	watcher := &Watcher{
+		NodeName:       "demo",
+		State:          StateWaitingInput,
+		StateEnteredAt: now.Add(-5 * time.Second),
+		WaitEventID:    2,
+		NotifyCount:    1,
+	}
+
+	applyWatcherObservation(watcher, watcherObservation{
+		now:        now,
+		screen:     "minor cursor noise",
+		similarity: 0.90,
+		stable:     false,
+	}, ServiceConfig{SilenceThreshold: 35 * time.Second, ReminderInterval: 2 * time.Minute}, &stubClassifier{state: StateRunning, reason: "unused"})
+
+	if watcher.State != StateWaitingInput {
+		t.Fatalf("expected sticky waiting_input state, got %s", watcher.State)
+	}
+	if watcher.WaitEventID != 2 {
+		t.Fatalf("expected wait event id unchanged, got %d", watcher.WaitEventID)
+	}
+}
+
+func TestApplyWatcherObservationLeavesWaitingInputAfterSilenceThreshold(t *testing.T) {
+	now := time.Now()
+	watcher := &Watcher{
+		NodeName:       "demo",
+		State:          StateWaitingInput,
+		StateEnteredAt: now.Add(-40 * time.Second),
+		WaitEventID:    2,
+	}
+
+	applyWatcherObservation(watcher, watcherObservation{
+		now:        now,
+		screen:     "major follow-up output",
+		similarity: 0.50,
+		stable:     false,
+	}, ServiceConfig{SilenceThreshold: 35 * time.Second, ReminderInterval: 2 * time.Minute}, &stubClassifier{state: StateRunning, reason: "unused"})
+
+	if watcher.State != StateRunning {
+		t.Fatalf("expected state to leave waiting_input after threshold, got %s", watcher.State)
 	}
 }
 
