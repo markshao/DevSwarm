@@ -20,7 +20,16 @@ type ServiceConfig struct {
 	SimilarityThreshold float64
 	TailLines           int
 	LLMEnabled          bool
+	LastBlock           LastBlockConfig
 	Lark                LarkConfig
+}
+
+type LastBlockConfig struct {
+	Enabled  bool
+	Mode     string
+	Prefix   string
+	Regex    string
+	MaxChars int
 }
 
 type LarkConfig struct {
@@ -54,6 +63,9 @@ type Watcher struct {
 	LastLLMReason        string    `json:"last_llm_reason,omitempty"`
 	WaitEventID          int       `json:"wait_event_id,omitempty"`
 	AckedWaitEventID     int       `json:"acked_wait_event_id,omitempty"`
+	MutedWaitEventID     int       `json:"muted_wait_event_id,omitempty"`
+	LastAgentBlock       string    `json:"last_agent_block,omitempty"`
+	LastAgentBlockAt     time.Time `json:"last_agent_block_at,omitempty"`
 	LastNotifyAt         time.Time `json:"last_notify_at,omitempty"`
 	NotifyCount          int       `json:"notify_count,omitempty"`
 	LastError            string    `json:"last_error,omitempty"`

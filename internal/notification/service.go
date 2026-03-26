@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -238,6 +239,14 @@ func Run(rootPath string) error {
 	if err := configureNotifier(cfg); err != nil {
 		return err
 	}
+	if strings.EqualFold(strings.TrimSpace(cfg.Provider), "lark") {
+		if err := startLarkCallbackWS(rootPath, cfg); err != nil {
+			status := &ServiceStatus{}
+			status.LastError = err.Error()
+			_ = WriteStatus(rootPath, status)
+			serviceLogf("notification.lark_callback.start_failed error=%q", err.Error())
+		}
+	}
 	serviceLogf("notification.service.started workspace=%s provider=%s enabled=%t llm_classifier=%t poll_interval=%s silence_threshold=%s reminder_interval=%s",
 		rootPath, cfg.Provider, cfg.Enabled, cfg.LLMEnabled, cfg.PollInterval, cfg.SilenceThreshold, cfg.ReminderInterval)
 
@@ -433,17 +442,32 @@ func buildWatcherObservation(watcher *Watcher, sessionName, screen string, now t
 func applyWatcherObservation(watcher *Watcher, observation watcherObservation, cfg ServiceConfig, classifier SnapshotClassifier) {
 	previousState := watcher.State
 	if !observation.stable {
+		if shouldKeepWaitingInputSticky(previousState, watcher, cfg.SilenceThreshold, observation.now) {
+			watcher.LastReason = fmt.Sprintf("waiting_input_sticky_screen_change_similarity=%.4f", observation.similarity)
+			return
+		}
 		transitionWatcherState(watcher, StateRunning, fmt.Sprintf("screen_changed_similarity=%.4f", observation.similarity), observation.now)
 		return
 	}
 
 	transitionWatcherState(watcher, StateQuietCandidate, fmt.Sprintf("stable_screen_similarity=%.4f", observation.similarity), observation.now)
 	classification := classifyQuietScreen(watcher, classifier, observation.screen, observation.stableFor)
+	if shouldKeepWaitingInputSticky(previousState, watcher, cfg.SilenceThreshold, observation.now) && classification.State != StateWaitingInput {
+		watcher.LastReason = fmt.Sprintf("waiting_input_sticky_classifier=%s", classification.State)
+		return
+	}
 	transitionWatcherState(watcher, classification.State, classification.Reason, observation.now)
+	if watcher.State == StateWaitingInput {
+		block := extractLastAgentBlock(observation.screen, cfg.LastBlock)
+		if strings.TrimSpace(block) != "" {
+			watcher.LastAgentBlock = block
+			watcher.LastAgentBlockAt = observation.now
+		}
+	}
 
 	if shouldNotify(previousState, watcher, cfg.ReminderInterval, observation.now) {
 		serviceLogf("notification.trigger node=%s label=%q reason=%q state=%s", watcher.NodeName, watcher.Label, classification.Reason, watcher.State)
-		if err := sendWatcherNotification(watcher.NodeName, watcher.Label, classification.Reason); err != nil {
+		if err := sendWatcherNotification(watcher, classification.Reason); err != nil {
 			watcher.LastError = err.Error()
 			serviceLogf("notification.failed node=%s label=%q error=%q", watcher.NodeName, watcher.Label, err.Error())
 			return
@@ -453,6 +477,19 @@ func applyWatcherObservation(watcher *Watcher, observation watcherObservation, c
 		watcher.LastError = ""
 		serviceLogf("notification.sent node=%s label=%q notify_count=%d", watcher.NodeName, watcher.Label, watcher.NotifyCount)
 	}
+}
+
+func shouldKeepWaitingInputSticky(previousState string, watcher *Watcher, silenceThreshold time.Duration, now time.Time) bool {
+	if previousState != StateWaitingInput {
+		return false
+	}
+	if watcher == nil || watcher.State != StateWaitingInput {
+		return false
+	}
+	if silenceThreshold <= 0 || watcher.StateEnteredAt.IsZero() {
+		return false
+	}
+	return now.Sub(watcher.StateEnteredAt) < silenceThreshold
 }
 
 func transitionWatcherState(watcher *Watcher, nextState, reason string, now time.Time) {
@@ -471,6 +508,9 @@ func transitionWatcherState(watcher *Watcher, nextState, reason string, now time
 
 func shouldNotify(previousState string, watcher *Watcher, reminderInterval time.Duration, now time.Time) bool {
 	if watcher.State != StateWaitingInput {
+		return false
+	}
+	if watcher.WaitEventID > 0 && watcher.MutedWaitEventID >= watcher.WaitEventID {
 		return false
 	}
 	if previousState != StateWaitingInput {

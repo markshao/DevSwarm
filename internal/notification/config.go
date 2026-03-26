@@ -17,6 +17,12 @@ func defaultServiceConfig() ServiceConfig {
 		SimilarityThreshold: 0.99,
 		TailLines:           80,
 		LLMEnabled:          true,
+		LastBlock: LastBlockConfig{
+			Enabled:  true,
+			Mode:     "prefix",
+			Prefix:   "• ",
+			MaxChars: 1200,
+		},
 		Lark: LarkConfig{
 			BaseURL:   "https://open.feishu.cn",
 			UrgentApp: true,
@@ -67,6 +73,21 @@ func LoadServiceConfig(rootPath string) (ServiceConfig, error) {
 		}
 		if globalNotifications.TailLines > 0 {
 			cfg.TailLines = globalNotifications.TailLines
+		}
+		if globalNotifications.LastBlock.Enabled != nil {
+			cfg.LastBlock.Enabled = *globalNotifications.LastBlock.Enabled
+		}
+		if globalNotifications.LastBlock.Mode != "" {
+			cfg.LastBlock.Mode = globalNotifications.LastBlock.Mode
+		}
+		if globalNotifications.LastBlock.Prefix != "" {
+			cfg.LastBlock.Prefix = globalNotifications.LastBlock.Prefix
+		}
+		if globalNotifications.LastBlock.Regex != "" {
+			cfg.LastBlock.Regex = globalNotifications.LastBlock.Regex
+		}
+		if globalNotifications.LastBlock.MaxChars > 0 {
+			cfg.LastBlock.MaxChars = globalNotifications.LastBlock.MaxChars
 		}
 		if globalNotifications.LLMClassifier.Enabled != nil {
 			cfg.LLMEnabled = *globalNotifications.LLMClassifier.Enabled

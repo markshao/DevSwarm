@@ -19,7 +19,7 @@ var lookPath = exec.LookPath
 var sendWatcherNotification = dispatchWatcherNotification
 
 type watcherNotifier interface {
-	NotifyWatcher(nodeName, label, reason string) error
+	NotifyWatcher(watcher *Watcher, reason string) error
 }
 
 type notifierState struct {
@@ -31,11 +31,11 @@ var globalNotifier = &notifierState{
 	notifier: &macNotifier{},
 }
 
-func dispatchWatcherNotification(nodeName, label, reason string) error {
+func dispatchWatcherNotification(watcher *Watcher, reason string) error {
 	globalNotifier.mu.RLock()
 	current := globalNotifier.notifier
 	globalNotifier.mu.RUnlock()
-	return current.NotifyWatcher(nodeName, label, reason)
+	return current.NotifyWatcher(watcher, reason)
 }
 
 func configureNotifier(cfg ServiceConfig) error {
@@ -63,13 +63,15 @@ func newNotifier(cfg ServiceConfig) (watcherNotifier, error) {
 type macNotifier struct{}
 
 func NotifyWatcher(nodeName, label, reason string) error {
-	return (&macNotifier{}).NotifyWatcher(nodeName, label, reason)
+	return (&macNotifier{}).NotifyWatcher(&Watcher{NodeName: nodeName, Label: label}, reason)
 }
 
-func (m *macNotifier) NotifyWatcher(nodeName, label, reason string) error {
+func (m *macNotifier) NotifyWatcher(watcher *Watcher, reason string) error {
 	if runtime.GOOS != "darwin" {
 		return fmt.Errorf("mac notifications are only supported on darwin")
 	}
+	nodeName := watcher.NodeName
+	label := watcher.Label
 
 	body := "Waiting for input"
 	if reason != "" {
@@ -152,11 +154,11 @@ func newLarkNotifier(cfg LarkConfig) (*larkNotifier, error) {
 	}, nil
 }
 
-func (n *larkNotifier) NotifyWatcher(nodeName, label, reason string) error {
+func (n *larkNotifier) NotifyWatcher(watcher *Watcher, reason string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	messageID, err := n.sendInteractiveCard(ctx, nodeName, label, reason)
+	messageID, err := n.sendInteractiveCard(ctx, watcher, reason)
 	if err != nil {
 		return err
 	}
@@ -169,8 +171,8 @@ func (n *larkNotifier) NotifyWatcher(nodeName, label, reason string) error {
 	return n.markUrgent(ctx, messageID)
 }
 
-func (n *larkNotifier) sendInteractiveCard(ctx context.Context, nodeName, label, reason string) (string, error) {
-	contentPayload := buildLarkCardPayload(n.cfg.CardTitle, nodeName, label, reason)
+func (n *larkNotifier) sendInteractiveCard(ctx context.Context, watcher *Watcher, reason string) (string, error) {
+	contentPayload := buildLarkCardPayload(n.cfg.CardTitle, watcher, reason)
 	contentBytes, err := json.Marshal(contentPayload)
 	if err != nil {
 		return "", fmt.Errorf("failed to encode lark card content: %w", err)
@@ -203,7 +205,36 @@ func (n *larkNotifier) sendInteractiveCard(ctx context.Context, nodeName, label,
 	return strings.TrimSpace(*resp.Data.MessageId), nil
 }
 
-func buildLarkCardPayload(title, nodeName, label, reason string) map[string]interface{} {
+func buildLarkCardPayload(title string, watcher *Watcher, reason string) map[string]interface{} {
+	nodeName := watcher.NodeName
+	label := watcher.Label
+	if strings.TrimSpace(reason) == "" {
+		reason = watcher.LastReason
+	}
+	latestBlock := strings.TrimSpace(watcher.LastAgentBlock)
+	if latestBlock == "" {
+		latestBlock = "-"
+	}
+
+	ackValue := map[string]interface{}{
+		"action":        "ack",
+		"node_name":     watcher.NodeName,
+		"label":         watcher.Label,
+		"pane_id":       watcher.PaneID,
+		"wait_event_id": watcher.WaitEventID,
+		"screen_hash":   watcher.LastHash,
+		"sent_at":       time.Now().Format(time.RFC3339),
+	}
+	replyValue := map[string]interface{}{
+		"action":        "reply",
+		"node_name":     watcher.NodeName,
+		"label":         watcher.Label,
+		"pane_id":       watcher.PaneID,
+		"wait_event_id": watcher.WaitEventID,
+		"screen_hash":   watcher.LastHash,
+		"sent_at":       time.Now().Format(time.RFC3339),
+	}
+
 	return map[string]interface{}{
 		"config": map[string]interface{}{
 			"wide_screen_mode": true,
@@ -219,11 +250,56 @@ func buildLarkCardPayload(title, nodeName, label, reason string) map[string]inte
 			{
 				"tag": "markdown",
 				"content": fmt.Sprintf(
-					"**Node:** %s\n**Label:** %s\n**Reason:** %s\n**State:** waiting_input",
+					"**Node:** %s\n**Label:** %s\n**State:** waiting_input\n**Reason:** %s",
 					nodeName,
 					emptyAsDash(label),
 					emptyAsDash(reason),
 				),
+			},
+			{
+				"tag":     "markdown",
+				"content": fmt.Sprintf("**Latest Agent Response**\n%s", latestBlock),
+			},
+			{
+				"tag":  "form",
+				"name": "reply_form",
+				"elements": []map[string]interface{}{
+					{
+						"tag":        "input",
+						"name":       "reply_text",
+						"max_length": 1000,
+						"multiline":  true,
+						"placeholder": map[string]interface{}{
+							"tag":     "plain_text",
+							"content": "Quick reply to agent",
+						},
+					},
+					{
+						"tag":  "button",
+						"name": "submit_reply",
+						"text": map[string]interface{}{
+							"tag":     "plain_text",
+							"content": "Reply 提交",
+						},
+						"type":        "primary",
+						"action_type": "form_submit",
+						"value":       replyValue,
+					},
+				},
+			},
+			{
+				"tag": "action",
+				"actions": []map[string]interface{}{
+					{
+						"tag": "button",
+						"text": map[string]interface{}{
+							"tag":     "plain_text",
+							"content": "Ack",
+						},
+						"type":  "default",
+						"value": ackValue,
+					},
+				},
 			},
 		},
 	}

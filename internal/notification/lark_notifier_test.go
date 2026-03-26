@@ -8,7 +8,7 @@ import (
 )
 
 func TestBuildLarkCardPayloadIncludesNodeAndTitle(t *testing.T) {
-	payload := buildLarkCardPayload("boss, 我想干活", "node-123", "review", "approval required")
+	payload := buildLarkCardPayload("boss, 我想干活", &Watcher{NodeName: "node-123", Label: "review", WaitEventID: 1}, "approval required")
 
 	header, ok := payload["header"].(map[string]interface{})
 	if !ok {

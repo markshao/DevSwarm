@@ -39,12 +39,29 @@ agents:
 
 notifications:
   enabled: true
+  provider: lark
   poll_interval: 5s
   silence_threshold: 20s
   reminder_interval: 5m
+  similarity_threshold: 0.99
+  tail_lines: 80
+  last_block:
+    enabled: true
+    mode: prefix
+    prefix: "• "
+    max_chars: 1200
   llm_classifier:
     enabled: true
+  lark:
+    app_id: ${ORION_LARK_APP_ID}
+    app_secret: ${ORION_LARK_APP_SECRET}
+    open_id: ${ORION_LARK_OPEN_ID}
+    base_url: https://open.feishu.cn
+    urgent_app: true
+    card_title: "boss, I want to work"
 ```
+
+`notifications.last_block` controls how Orion extracts the latest agent response block for interactive Lark cards (supports `prefix` and `regex` modes).
 
 ## Related workflow files
 

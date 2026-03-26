@@ -41,12 +41,29 @@ agents:
 
 notifications:
   enabled: true
+  provider: lark
   poll_interval: 5s
   silence_threshold: 20s
   reminder_interval: 5m
+  similarity_threshold: 0.99
+  tail_lines: 80
+  last_block:
+    enabled: true
+    mode: prefix
+    prefix: "• "
+    max_chars: 1200
   llm_classifier:
     enabled: true
+  lark:
+    app_id: ${ORION_LARK_APP_ID}
+    app_secret: ${ORION_LARK_APP_SECRET}
+    open_id: ${ORION_LARK_OPEN_ID}
+    base_url: https://open.feishu.cn
+    urgent_app: true
+    card_title: "boss, 我想干活"
 ```
+
+`notifications.last_block` 用于控制 Orion 如何提取最近一次 agent response block 供 Lark 交互卡片展示（支持 `prefix` 和 `regex` 模式）。
 
 ## Workflow 相关文件
 

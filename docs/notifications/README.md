@@ -7,6 +7,10 @@ Orion notification service scans node sessions and detects when an agent is wait
 - Orion tracks tmux pane output for registered node watchers.
 - When output is classified as waiting for input, Orion emits a local notification.
 - Entering the node acknowledges the pending wait event.
+- Lark interactive card supports:
+  - `Ack`: mute reminder notifications for the current wait event.
+  - `Reply`: send quick reply text back to the target node via tmux.
+- `Ack` does not clear pending wait-input status shown in `orion enter`.
 - Notification delivery supports Feishu/Lark bot integration as an official channel.
 
 ## Commands
@@ -31,6 +35,11 @@ notifications:
   reminder_interval: 5m
   similarity_threshold: 0.99
   tail_lines: 80
+  last_block:
+    enabled: true
+    mode: prefix
+    prefix: "• "
+    max_chars: 1200
   llm_classifier:
     enabled: true
   lark:
@@ -40,6 +49,41 @@ notifications:
     base_url: https://open.feishu.cn
     urgent_app: true
     card_title: "boss, I want to work"
+```
+
+## Card Content
+
+Lark card includes:
+
+- Configurable title from `notifications.lark.card_title`
+- Node name and label
+- Current wait-input reason
+- Latest agent response block extracted from terminal output (`notifications.last_block`)
+
+## Last Block Extraction
+
+Use `notifications.last_block` to adapt different coding agents:
+
+By default, Orion is tuned for OpenAI Codex-style terminal output (`prefix: "• "`), so no extra config is required for Codex.
+
+```yaml
+# Codex-style bullet block
+notifications:
+  last_block:
+    enabled: true
+    mode: prefix
+    prefix: "• "
+    max_chars: 1200
+```
+
+```yaml
+# Kimi-style regex block (example)
+notifications:
+  last_block:
+    enabled: true
+    mode: regex
+    regex: "(?s)Final Answer:\\s*(.+)$"
+    max_chars: 1200
 ```
 
 ## Official Channels

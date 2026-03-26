@@ -26,7 +26,7 @@ func TestLarkBotSendWaitInputNotificationLive(t *testing.T) {
 		t.Fatalf("newLarkNotifier returned error: %v", err)
 	}
 
-	if err := notifier.NotifyWatcher("demo-node", "live-test", "approval required"); err != nil {
+	if err := notifier.NotifyWatcher(&Watcher{NodeName: "demo-node", Label: "live-test"}, "approval required"); err != nil {
 		t.Fatalf("failed to send lark notification: %v", err)
 	}
 }
