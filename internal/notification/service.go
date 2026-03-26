@@ -335,10 +335,30 @@ func tick(rootPath string, cfg ServiceConfig, classifier SnapshotClassifier, sta
 			if existing.PaneID != evaluated.PaneID {
 				continue
 			}
-			current.Watchers[nodeName] = evaluated
+			current.Watchers[nodeName] = mergeWatcherPersistentCounters(existing, evaluated)
 		}
 		return nil
 	})
+}
+
+func mergeWatcherPersistentCounters(existing, evaluated *Watcher) *Watcher {
+	if existing == nil {
+		return evaluated
+	}
+	if evaluated == nil {
+		return existing
+	}
+
+	merged := *evaluated
+	// Preserve monotonic wait/ack counters across concurrent writes
+	// (e.g. enter command acknowledges while service tick is persisting).
+	if existing.WaitEventID > merged.WaitEventID {
+		merged.WaitEventID = existing.WaitEventID
+	}
+	if existing.AckedWaitEventID > merged.AckedWaitEventID {
+		merged.AckedWaitEventID = existing.AckedWaitEventID
+	}
+	return &merged
 }
 
 func evaluateWatcher(watcher *Watcher, cfg ServiceConfig, classifier SnapshotClassifier) {
@@ -438,6 +458,11 @@ func applyWatcherObservation(watcher *Watcher, observation watcherObservation, c
 	}
 
 	transitionWatcherState(watcher, StateQuietCandidate, fmt.Sprintf("stable_screen_similarity=%.4f", observation.similarity), observation.now)
+	if cfg.SilenceThreshold > 0 && observation.stableFor < cfg.SilenceThreshold {
+		transitionWatcherState(watcher, StateQuietCandidate, fmt.Sprintf("stable_for_%s_below_silence_threshold_%s", observation.stableFor.Round(time.Second), cfg.SilenceThreshold), observation.now)
+		return
+	}
+
 	classification := classifyQuietScreen(watcher, classifier, observation.screen, observation.stableFor)
 	transitionWatcherState(watcher, classification.State, classification.Reason, observation.now)
 

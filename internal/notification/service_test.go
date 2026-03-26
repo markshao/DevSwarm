@@ -176,6 +176,40 @@ func TestApplyWatcherObservationTreatsNewWaitingInputAsNewEvent(t *testing.T) {
 	}
 }
 
+func TestApplyWatcherObservationSkipsClassificationBeforeSilenceThreshold(t *testing.T) {
+	now := time.Now()
+	watcher := &Watcher{
+		NodeName:       "demo",
+		State:          StateRunning,
+		StateEnteredAt: now.Add(-10 * time.Second),
+	}
+	classifier := &stubClassifier{state: StateWaitingInput, reason: "approval required"}
+
+	applyWatcherObservation(watcher, watcherObservation{
+		now:        now,
+		screen:     "press enter to approve",
+		similarity: 1,
+		stable:     true,
+		stableFor:  5 * time.Second,
+	}, ServiceConfig{
+		SilenceThreshold: 20 * time.Second,
+		ReminderInterval: 2 * time.Minute,
+	}, classifier)
+
+	if watcher.State != StateQuietCandidate {
+		t.Fatalf("expected stable screen below silence threshold to stay quiet_candidate, got %s", watcher.State)
+	}
+	if classifier.calls != 0 {
+		t.Fatalf("expected classifier not to run before silence threshold, got %d calls", classifier.calls)
+	}
+	if watcher.WaitEventID != 0 {
+		t.Fatalf("expected no wait event before silence threshold, got %d", watcher.WaitEventID)
+	}
+	if watcher.NotifyCount != 0 {
+		t.Fatalf("expected no notification before silence threshold, got %d", watcher.NotifyCount)
+	}
+}
+
 func TestTransitionWatcherStateIncrementsWaitEventOnlyOnEntry(t *testing.T) {
 	now := time.Now()
 	watcher := &Watcher{State: StateRunning}
@@ -238,5 +272,51 @@ func TestClearWatchers(t *testing.T) {
 	}
 	if len(registry.Watchers) != 0 {
 		t.Fatalf("expected watcher registry to be empty after cleanup, got %d", len(registry.Watchers))
+	}
+}
+
+func TestMergeWatcherPersistentCountersPreservesHigherAckAndEvent(t *testing.T) {
+	existing := &Watcher{
+		NodeName:         "demo",
+		PaneID:           "%1",
+		WaitEventID:      5,
+		AckedWaitEventID: 4,
+	}
+	evaluated := &Watcher{
+		NodeName:         "demo",
+		PaneID:           "%1",
+		WaitEventID:      3,
+		AckedWaitEventID: 1,
+	}
+
+	merged := mergeWatcherPersistentCounters(existing, evaluated)
+	if merged.WaitEventID != 5 {
+		t.Fatalf("expected merged wait event id 5, got %d", merged.WaitEventID)
+	}
+	if merged.AckedWaitEventID != 4 {
+		t.Fatalf("expected merged acked wait event id 4, got %d", merged.AckedWaitEventID)
+	}
+}
+
+func TestMergeWatcherPersistentCountersKeepsEvaluatedWhenNewer(t *testing.T) {
+	existing := &Watcher{
+		NodeName:         "demo",
+		PaneID:           "%1",
+		WaitEventID:      2,
+		AckedWaitEventID: 1,
+	}
+	evaluated := &Watcher{
+		NodeName:         "demo",
+		PaneID:           "%1",
+		WaitEventID:      4,
+		AckedWaitEventID: 3,
+	}
+
+	merged := mergeWatcherPersistentCounters(existing, evaluated)
+	if merged.WaitEventID != 4 {
+		t.Fatalf("expected merged wait event id 4, got %d", merged.WaitEventID)
+	}
+	if merged.AckedWaitEventID != 3 {
+		t.Fatalf("expected merged acked wait event id 3, got %d", merged.AckedWaitEventID)
 	}
 }
