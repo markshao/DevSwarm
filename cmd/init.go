@@ -19,7 +19,7 @@ var initCmd = &cobra.Command{
 	Long: `Creates a new directory with the necessary structure for Orion.
 Clones the repository into a 'repo' subdirectory and sets up configuration.`,
 	Args: cobra.MinimumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		repoURL := args[0]
 		dirName := ""
 		if len(args) > 1 {
@@ -57,8 +57,7 @@ Clones the repository into a 'repo' subdirectory and sets up configuration.`,
 
 		i, _, err := prompt.Run()
 		if err != nil {
-			fmt.Printf("Prompt failed: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("prompt failed: %w", err)
 		}
 		selectedProvider := agents[i].Provider
 
@@ -67,20 +66,17 @@ Clones the repository into a 'repo' subdirectory and sets up configuration.`,
 		// 1. Create directory structure
 		absPath, err := filepath.Abs(dirName)
 		if err != nil {
-			fmt.Printf("Error resolving path: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("resolve path: %w", err)
 		}
 
 		if err := os.MkdirAll(absPath, 0755); err != nil {
-			fmt.Printf("Error creating directory: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("create directory: %w", err)
 		}
 
 		// 2. Initialize workspace structure
 		wm, err := workspace.Init(absPath, repoURL)
 		if err != nil {
-			fmt.Printf("Failed to initialize workspace: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("initialize workspace: %w", err)
 		}
 
 		// 2.5 Pre-install workflow files
@@ -91,9 +87,8 @@ Clones the repository into a 'repo' subdirectory and sets up configuration.`,
 		// 3. Clone the repository
 		fmt.Println("Cloning bare repository...")
 		if err := git.CloneBare(repoURL, wm.State.RepoPath); err != nil {
-			fmt.Printf("Failed to clone repository: %v\n", err)
 			// Cleanup could be added here
-			os.Exit(1)
+			return fmt.Errorf("clone repository: %w", err)
 		}
 
 		// 4. Create initial VSCode workspace file
@@ -107,6 +102,7 @@ Clones the repository into a 'repo' subdirectory and sets up configuration.`,
 		if err := notification.EnsureStarted(absPath); err != nil {
 			fmt.Printf("Warning: Failed to start notification service: %v\n", err)
 		}
+		return nil
 	},
 }
 

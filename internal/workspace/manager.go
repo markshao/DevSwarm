@@ -78,7 +78,7 @@ func (wm *WorkspaceManager) SyncVSCodeWorkspace() error {
 	var nodes []string
 	for name, node := range wm.State.Nodes {
 		// Only include user-created nodes
-		if node.CreatedBy == "user" {
+		if node.CreatedBy == types.NodeCreatedByUser {
 			nodes = append(nodes, name)
 		}
 	}
@@ -314,7 +314,7 @@ func (wm *WorkspaceManager) SpawnNode(nodeName, logicalBranch, baseBranch, label
 		ShadowBranch:  shadowBranch,
 		WorktreePath:  worktreePath,
 		Label:         label,
-		CreatedBy:     "user",
+		CreatedBy:     types.NodeCreatedByUser,
 		CreatedAt:     time.Now(),
 		// TmuxSession is empty initially
 	}

@@ -25,19 +25,17 @@ Examples:
   orion ls | awk '{print $1}' | xargs orion rm -f`,
 	Args:              cobra.ArbitraryArgs,
 	ValidArgsFunction: CompleteNodeNames,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		force, _ := cmd.Flags().GetBool("force")
 
 		cwd, err := os.Getwd()
 		if err != nil {
-			fmt.Printf("Error getting current directory: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		wm, err := workspace.NewManager(cwd)
 		if err != nil {
-			fmt.Printf("Failed to load workspace: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		var nodeNames []string
@@ -45,8 +43,7 @@ Examples:
 			// Interactive mode: select a single node
 			nodeName, err := SelectNode(wm, "remove", true)
 			if err != nil {
-				fmt.Printf("%v\n", err)
-				return
+				return err
 			}
 			nodeNames = append(nodeNames, nodeName)
 		} else {
@@ -94,7 +91,7 @@ Examples:
 				fmt.Scanln(&confirm)
 				if confirm != "y" && confirm != "Y" {
 					fmt.Println("Aborted.")
-					return
+					return nil
 				}
 			}
 		}
@@ -124,8 +121,10 @@ Examples:
 		}
 
 		if len(failed) > 0 {
-			os.Exit(1)
+			return fmt.Errorf("failed to remove %d node(s): %v", len(failed), failed)
 		}
+
+		return nil
 	},
 }
 

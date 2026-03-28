@@ -58,17 +58,13 @@ Configuration:
 
   api_key supports direct input or environment variable reference (e.g., $MOONSHOT_API_KEY)`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		description := args[0]
 
 		// Create AI client
 		client, err := ai.NewClient()
 		if err != nil {
-			fmt.Printf("❌ %v\n", err)
-			fmt.Println("\nHint: Please configure AI model info in ~/.orion.yaml")
-			fmt.Println("\nExample config:")
-			fmt.Println(ai.ExampleConfig())
-			os.Exit(1)
+			return fmt.Errorf("%w\n\nhint: configure AI model info in ~/.orion.yaml\n\nexample config:\n%s", err, ai.ExampleConfig())
 		}
 
 		fmt.Printf("🤖 Analyzing: \"%s\"\n", description)
@@ -76,8 +72,7 @@ Configuration:
 		// Generate spawn plan
 		plan, err := client.GenerateSpawnPlan(description)
 		if err != nil {
-			fmt.Printf("❌ AI analysis failed: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("ai analysis failed: %w", err)
 		}
 
 		// Display plan
@@ -92,15 +87,13 @@ Configuration:
 		// Get current directory
 		cwd, err := os.Getwd()
 		if err != nil {
-			fmt.Printf("❌ Failed to get current directory: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		// Load workspace
 		wm, err := workspace.NewManager(cwd)
 		if err != nil {
-			fmt.Printf("❌ Failed to load workspace: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		// Confirm execution
@@ -112,7 +105,7 @@ Configuration:
 			confirm = strings.ToLower(strings.TrimSpace(confirm))
 			if confirm != "y" && confirm != "yes" {
 				fmt.Println("Cancelled")
-				os.Exit(0)
+				return nil
 			}
 		}
 
@@ -127,12 +120,10 @@ Configuration:
 			if strings.Contains(err.Error(), "invalid") && strings.Contains(err.Error(), "Provide --base to create it") {
 				fmt.Printf("   Branch '%s' already exists, creating worktree on this branch...\n", plan.BranchName)
 				if err := wm.SpawnNode(plan.NodeName, plan.BranchName, "", label, false); err != nil {
-					fmt.Printf("❌ Creation failed: %v\n", err)
-					os.Exit(1)
+					return fmt.Errorf("create node: %w", err)
 				}
 			} else {
-				fmt.Printf("❌ Creation failed: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("create node: %w", err)
 			}
 		}
 
@@ -140,6 +131,7 @@ Configuration:
 		fmt.Printf("\nNext steps:\n")
 		fmt.Printf("   Enter dev environment: orion enter %s\n", plan.NodeName)
 		fmt.Printf("   Check status:          orion ls\n")
+		return nil
 	},
 }
 

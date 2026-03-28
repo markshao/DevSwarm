@@ -12,10 +12,11 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the version number of Orion",
 	Long:  `All software has versions. This is Orion's.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Orion version %s\n", version.Version)
 		fmt.Printf("Commit: %s\n", version.Commit)
 		fmt.Printf("Date: %s\n", version.Date)
+		return nil
 	},
 }
 

@@ -2,6 +2,10 @@ package types
 
 import "time"
 
+const (
+	NodeCreatedByUser = "user"
+)
+
 // Node represents a development unit in Orion.
 // A Node can exist without a Tmux session (e.g. just created, or session killed).
 type Node struct {

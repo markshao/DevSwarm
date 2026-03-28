@@ -20,24 +20,21 @@ var inspectCmd = &cobra.Command{
 	Short:             "Inspect a development node",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: CompleteNodeNames,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
-			color.Red("Error getting current directory: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		// Find workspace root
 		rootPath, err := workspace.FindWorkspaceRoot(cwd)
 		if err != nil {
-			color.Red("Not in a Orion workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("not in an orion workspace: %w", err)
 		}
 
 		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
-			color.Red("Failed to load workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		var nodeName string
@@ -48,18 +45,16 @@ var inspectCmd = &cobra.Command{
 			nodeName, err = SelectNode(wm, "inspect", true)
 			if err != nil {
 				if err.Error() == "^C" {
-					return
+					return nil
 				}
-				color.Red("%v", err)
-				return
+				return err
 			}
 		}
 
 		// 1. Get Node Info
 		node, exists := wm.State.Nodes[nodeName]
 		if !exists {
-			color.Red("Node '%s' not found.", nodeName)
-			os.Exit(1)
+			return fmt.Errorf("node '%s' not found", nodeName)
 		}
 
 		fmt.Println("📦 Node Information")
@@ -142,6 +137,7 @@ var inspectCmd = &cobra.Command{
 		fmt.Println("\n💡 Actions")
 		fmt.Printf("  To enter this node: orion enter %s\n", nodeName)
 		fmt.Printf("  To push branch:     orion push %s\n", nodeName)
+		return nil
 	},
 }
 

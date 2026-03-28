@@ -142,11 +142,9 @@ Examples:
   orion run -w my-node npm test
   orion run --worktree my-node go test ./...`,
 	DisableFlagParsing: true,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
-			fmt.Println("Error: A command must be specified")
-			fmt.Println("Usage: orion run <command> [args...]")
-			os.Exit(1)
+			return fmt.Errorf("a command must be specified (usage: orion run <command> [args...])")
 		}
 
 		// 解析 flags：找到 --worktree 或 -w 及其参数
@@ -158,8 +156,7 @@ Examples:
 			arg := args[i]
 			if arg == "--worktree" || arg == "-w" {
 				if i+1 >= len(args) {
-					fmt.Println("Error: --worktree/-w requires an argument")
-					os.Exit(1)
+					return fmt.Errorf("--worktree/-w requires an argument")
 				}
 				targetWorktree = args[i+1]
 				i += 2
@@ -171,40 +168,30 @@ Examples:
 		}
 
 		if len(commandArgs) == 0 {
-			fmt.Println("Error: A command must be specified")
-			fmt.Println("Usage: orion run <command> [args...]")
-			os.Exit(1)
+			return fmt.Errorf("a command must be specified (usage: orion run <command> [args...])")
 		}
 
 		if targetWorktree == "" && !isGitCommand(commandArgs) {
-			fmt.Println("Error: bare repo context only supports git commands.")
-			fmt.Println("Use `orion run -w <node> ...` to run build, test, or other worktree commands.")
-			os.Exit(1)
+			return fmt.Errorf("bare repo context only supports git commands; use `orion run -w <node> ...` for worktree commands")
 		}
 		if targetWorktree == "" && requiresWorktree(commandArgs) {
-			fmt.Printf("Error: `git %s` requires a worktree.\n", firstGitSubcommand(commandArgs))
-			fmt.Println("Use `orion run -w <node> ...` to run worktree-dependent git commands.")
-			fmt.Println("Bare repo usage is intended for commands like `git fetch`, `git tag`, `git push`, and `git log`.")
-			os.Exit(1)
+			return fmt.Errorf("`git %s` requires a worktree; use `orion run -w <node> ...`", firstGitSubcommand(commandArgs))
 		}
 
 		// 找到 workspace root
 		cwd, err := os.Getwd()
 		if err != nil {
-			fmt.Printf("Error: Failed to get current directory: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		rootPath, err := workspace.FindWorkspaceRoot(cwd)
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 
 		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
-			fmt.Printf("Error: Failed to load workspace: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		// 确定执行目录
@@ -212,14 +199,12 @@ Examples:
 		var worktreeName string
 		execDir, worktreeName, err = determineExecDir(wm, cwd, targetWorktree)
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 
 		// Verify directory exists
 		if _, err := os.Stat(execDir); os.IsNotExist(err) {
-			fmt.Printf("Error: Execution directory does not exist: %s\n", execDir)
-			os.Exit(1)
+			return fmt.Errorf("execution directory does not exist: %s", execDir)
 		}
 
 		// Ensure our print appears before the command output by printing and flushing stdout
@@ -269,12 +254,12 @@ Examples:
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				// Command returned non-zero exit code
 				if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
-					os.Exit(status.ExitStatus())
+					return newExitCodeError(status.ExitStatus(), "")
 				}
 			}
-			fmt.Fprintf(os.Stderr, "Error: Failed to execute command: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("execute command: %w", err)
 		}
+		return nil
 	},
 }
 

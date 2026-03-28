@@ -38,7 +38,7 @@ Examples:
   orion workflow run code-review --node login-node`,
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: CompleteWorkflowNames,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		wfName := "default"
 		if len(args) > 0 {
 			wfName = args[0]
@@ -48,21 +48,18 @@ Examples:
 
 		cwd, err := os.Getwd()
 		if err != nil {
-			color.Red("Error getting current directory: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		// Find workspace root
 		rootPath, err := workspace.FindWorkspaceRoot(cwd)
 		if err != nil {
-			color.Red("Not in a Orion workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("not in an orion workspace: %w", err)
 		}
 
 		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
-			color.Red("Failed to load workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		// Determine target node (priority: --node flag > auto-detect)
@@ -75,8 +72,7 @@ Examples:
 			targetNodeName = nodeFlag
 			node, exists := wm.State.Nodes[targetNodeName]
 			if !exists {
-				color.Red("Node '%s' does not exist", targetNodeName)
-				os.Exit(1)
+				return fmt.Errorf("node '%s' does not exist", targetNodeName)
 			}
 			targetNode = &node
 			fmt.Printf("Target node (from --node flag): %s\n", targetNodeName)
@@ -100,61 +96,57 @@ Examples:
 			if len(baseBranch) > 11 && baseBranch[:11] == "orion/run-" {
 				color.Red("Recursion detected: Cannot trigger a workflow from within an active workflow run agent.")
 				color.Yellow("This prevents infinite loops when agents commit code.")
-				os.Exit(0) // Exit successfully to avoid error spam in hooks
+				return nil // Exit successfully to avoid error spam in hooks
 			}
 		}
 
 		engine := workflow.NewEngine(wm)
 		run, err := engine.StartRun(wfName, trigger, baseBranch, targetNodeName)
 		if err != nil {
-			color.Red("Failed to start workflow: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("start workflow: %w", err)
 		}
 
 		color.Green("🚀 Workflow '%s' completed with status: %s", wfName, run.Status)
 		if run.Status != workflow.StatusSuccess {
 			fmt.Printf("Run 'orion workflow inspect %s' to check details.\n", run.ID)
 		}
+		return nil
 	},
 }
 
 var lsWorkflowCmd = &cobra.Command{
 	Use:   "ls",
 	Short: "List workflow runs",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		quiet, _ := cmd.Flags().GetBool("quiet")
 
 		cwd, err := os.Getwd()
 		if err != nil {
-			color.Red("Error getting current directory: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		// Find workspace root
 		rootPath, err := workspace.FindWorkspaceRoot(cwd)
 		if err != nil {
-			color.Red("Not in a Orion workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("not in an orion workspace: %w", err)
 		}
 
 		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
-			color.Red("Failed to load workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		engine := workflow.NewEngine(wm)
 		runs, err := engine.ListRuns()
 		if err != nil {
-			color.Red("Failed to list runs: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("list runs: %w", err)
 		}
 
 		if len(runs) == 0 {
 			if !quiet {
 				fmt.Println("No workflow runs found.")
 			}
-			return
+			return nil
 		}
 
 		// Quiet mode: only output run IDs, suitable for piping
@@ -162,7 +154,7 @@ var lsWorkflowCmd = &cobra.Command{
 			for _, run := range runs {
 				fmt.Println(run.ID)
 			}
-			return
+			return nil
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
@@ -197,6 +189,7 @@ var lsWorkflowCmd = &cobra.Command{
 			)
 		}
 		w.Flush()
+		return nil
 	},
 }
 
@@ -241,24 +234,21 @@ var inspectWorkflowCmd = &cobra.Command{
 		}
 		return completions, cobra.ShellCompDirectiveNoFileComp
 	},
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
-			color.Red("Error getting current directory: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		// Find workspace root
 		rootPath, err := workspace.FindWorkspaceRoot(cwd)
 		if err != nil {
-			color.Red("Not in a Orion workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("not in an orion workspace: %w", err)
 		}
 
 		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
-			color.Red("Failed to load workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		var runID string
@@ -270,18 +260,16 @@ var inspectWorkflowCmd = &cobra.Command{
 			if err != nil {
 				// Don't exit with error if cancelled, just return
 				if err.Error() == "^C" {
-					return
+					return nil
 				}
-				fmt.Printf("%v\n", err)
-				return
+				return err
 			}
 		}
 
 		engine := workflow.NewEngine(wm)
 		run, err := engine.GetRun(runID)
 		if err != nil {
-			color.Red("Failed to get run %s: %v", runID, err)
-			os.Exit(1)
+			return fmt.Errorf("get run %s: %w", runID, err)
 		}
 
 		fmt.Printf("Run ID: %s\n", color.CyanString(run.ID))
@@ -328,6 +316,7 @@ var inspectWorkflowCmd = &cobra.Command{
 				fmt.Printf("- Step %s: %s\n", step.ID, color.RedString(step.Error))
 			}
 		}
+		return nil
 	},
 }
 
@@ -386,23 +375,20 @@ var enterWorkflowCmd = &cobra.Command{
 
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	},
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
-			color.Red("Error getting current directory: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		rootPath, err := workspace.FindWorkspaceRoot(cwd)
 		if err != nil {
-			color.Red("Not in a Orion workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("not in an orion workspace: %w", err)
 		}
 
 		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
-			color.Red("Failed to load workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		var runID string
@@ -413,18 +399,16 @@ var enterWorkflowCmd = &cobra.Command{
 			runID, err = SelectWorkflowRun(wm)
 			if err != nil {
 				if err.Error() == "^C" {
-					return
+					return nil
 				}
-				color.Red("%v", err)
-				return
+				return err
 			}
 		}
 
 		engine := workflow.NewEngine(wm)
 		run, err := engine.GetRun(runID)
 		if err != nil {
-			color.Red("Run '%s' not found.", runID)
-			os.Exit(1)
+			return fmt.Errorf("run '%s' not found", runID)
 		}
 
 		var stepID string
@@ -440,8 +424,7 @@ var enterWorkflowCmd = &cobra.Command{
 			}
 
 			if len(validSteps) == 0 {
-				color.Red("No agent nodes found for run %s", runID)
-				return
+				return fmt.Errorf("no agent nodes found for run %s", runID)
 			}
 
 			if len(validSteps) == 1 {
@@ -451,10 +434,9 @@ var enterWorkflowCmd = &cobra.Command{
 				stepID, err = SelectWorkflowStep(run)
 				if err != nil {
 					if err.Error() == "^C" {
-						return
+						return nil
 					}
-					color.Red("%v", err)
-					return
+					return err
 				}
 			}
 		}
@@ -469,15 +451,14 @@ var enterWorkflowCmd = &cobra.Command{
 		}
 
 		if nodeName == "" {
-			color.Red("Step %s not found or has no node", stepID)
-			return
+			return fmt.Errorf("step %s not found or has no node", stepID)
 		}
 
 		fmt.Printf("Entering agent node '%s' (Run: %s, Step: %s)...\n", nodeName, runID, stepID)
 		if err := wm.EnterNode(nodeName); err != nil {
-			color.Red("Failed to enter node: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("enter node: %w", err)
 		}
+		return nil
 	},
 }
 
@@ -518,25 +499,22 @@ Examples:
 		}
 		return completions, cobra.ShellCompDirectiveNoFileComp
 	},
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		force, _ := cmd.Flags().GetBool("force")
 
 		cwd, err := os.Getwd()
 		if err != nil {
-			color.Red("Error getting current directory: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		rootPath, err := workspace.FindWorkspaceRoot(cwd)
 		if err != nil {
-			color.Red("Not in a Orion workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("not in an orion workspace: %w", err)
 		}
 
 		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
-			color.Red("Failed to load workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		engine := workflow.NewEngine(wm)
@@ -546,8 +524,7 @@ Examples:
 		for _, runID := range args {
 			run, err := engine.GetRun(runID)
 			if err != nil {
-				color.Red("Run '%s' not found.", runID)
-				os.Exit(1)
+				return fmt.Errorf("run '%s' not found", runID)
 			}
 			runs = append(runs, run)
 		}
@@ -561,9 +538,7 @@ Examples:
 				}
 			}
 			if len(runningRuns) > 0 {
-				color.Red("Cannot remove the following running run(s): %v", runningRuns)
-				fmt.Println("\nUse --force to remove runs and all their agentic nodes.")
-				os.Exit(1)
+				return fmt.Errorf("cannot remove running run(s) without --force: %v", runningRuns)
 			}
 		}
 
@@ -612,9 +587,9 @@ Examples:
 		if len(args) == 1 && len(failed) == 0 {
 			color.Green("✅ Run '%s' removed successfully.", args[0])
 		} else if len(failed) > 0 {
-			color.Red("Failed to remove run(s): %v", failed)
-			os.Exit(1)
+			return fmt.Errorf("failed to remove run(s): %v", failed)
 		}
+		return nil
 	},
 }
 
@@ -683,23 +658,20 @@ var lsArtifactsCmd = &cobra.Command{
 		}
 		return completions, cobra.ShellCompDirectiveNoFileComp
 	},
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
-			color.Red("Error getting current directory: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		rootPath, err := workspace.FindWorkspaceRoot(cwd)
 		if err != nil {
-			color.Red("Not in a Orion workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("not in an orion workspace: %w", err)
 		}
 
 		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
-			color.Red("Failed to load workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		var runID string
@@ -710,18 +682,17 @@ var lsArtifactsCmd = &cobra.Command{
 			runID, err = SelectWorkflowRun(wm)
 			if err != nil {
 				if err.Error() == "^C" {
-					return
+					return nil
 				}
 				color.Red("%v", err)
-				return
+				return err
 			}
 		}
 
 		engine := workflow.NewEngine(wm)
 		run, err := engine.GetRun(runID)
 		if err != nil {
-			color.Red("Run '%s' not found.", runID)
-			os.Exit(1)
+			return fmt.Errorf("run '%s' not found", runID)
 		}
 
 		// List artifacts
@@ -748,6 +719,7 @@ var lsArtifactsCmd = &cobra.Command{
 		if !hasArtifacts {
 			fmt.Println("  (No artifacts found)")
 		}
+		return nil
 	},
 }
 
@@ -799,33 +771,29 @@ Examples:
 		}
 		return completions, cobra.ShellCompDirectiveNoFileComp
 	},
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		follow, _ := cmd.Flags().GetBool("follow")
 
 		cwd, err := os.Getwd()
 		if err != nil {
-			color.Red("Error getting current directory: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		rootPath, err := workspace.FindWorkspaceRoot(cwd)
 		if err != nil {
-			color.Red("Not in a Orion workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("not in an orion workspace: %w", err)
 		}
 
 		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
-			color.Red("Failed to load workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		runID := args[0]
 		engine := workflow.NewEngine(wm)
 		run, err := engine.GetRun(runID)
 		if err != nil {
-			color.Red("Run '%s' not found.", runID)
-			os.Exit(1)
+			return fmt.Errorf("run '%s' not found", runID)
 		}
 
 		// If step_id specified, show only that step's logs
@@ -839,11 +807,10 @@ Examples:
 				}
 			}
 			if step == nil {
-				color.Red("Step '%s' not found in run '%s'.", stepID, runID)
-				os.Exit(1)
+				return fmt.Errorf("step '%s' not found in run '%s'", stepID, runID)
 			}
 			showStepLogs(wm, runID, step, follow)
-			return
+			return nil
 		}
 
 		// Show all steps' logs
@@ -854,6 +821,7 @@ Examples:
 				fmt.Println()
 			}
 		}
+		return nil
 	},
 }
 
