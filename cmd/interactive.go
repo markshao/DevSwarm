@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"unicode"
@@ -35,7 +34,7 @@ const (
 // Returns the selected node name or an empty string if cancelled/failed.
 func SelectNode(wm *workspace.WorkspaceManager, action string, onlyHuman bool) (string, error) {
 	return SelectNodeWithFilter(wm, action, func(node types.Node) bool {
-		if onlyHuman && node.CreatedBy != "user" {
+		if onlyHuman && node.CreatedBy != types.NodeCreatedByUser {
 			return false
 		}
 		return true
@@ -83,7 +82,7 @@ func SelectNodeWithFilter(wm *workspace.WorkspaceManager, action string, filter 
 	index, _, err := prompt.Run()
 	if err != nil {
 		if err == promptui.ErrInterrupt {
-			os.Exit(0)
+			return "", err
 		}
 		return "", err
 	}
@@ -259,7 +258,7 @@ func SelectWorkflowRun(wm *workspace.WorkspaceManager) (string, error) {
 	_, result, err := prompt.Run()
 	if err != nil {
 		if err == promptui.ErrInterrupt {
-			os.Exit(0)
+			return "", err
 		}
 		return "", err
 	}
@@ -305,7 +304,7 @@ func SelectWorkflowStep(run *workflow.Run) (string, error) {
 	_, result, err := prompt.Run()
 	if err != nil {
 		if err == promptui.ErrInterrupt {
-			os.Exit(0)
+			return "", err
 		}
 		return "", err
 	}

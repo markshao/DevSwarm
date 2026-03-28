@@ -155,17 +155,16 @@ When run outside a node worktree (or when --branch is provided), sync-ref fetche
 origin and updates repo.git/refs/heads/<branch> from refs/remotes/origin/<branch>.
 If --branch is omitted in workspace mode, Orion uses .orion/config.yaml git.main_branch
 or falls back to 'main'.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
-			color.Red("Error getting current directory: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		if err := runSyncRef(cwd, os.Stdout, os.Stderr, syncRefBranch); err != nil {
-			color.Red("Failed to sync ref: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("sync ref: %w", err)
 		}
+		return nil
 	},
 }
 

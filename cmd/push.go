@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"orion/internal/git"
+	"orion/internal/types"
 	"orion/internal/workspace"
 
 	"github.com/fatih/color"
@@ -26,28 +27,24 @@ Examples:
   orion push`,
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: CompleteHumanNodeNames,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
-			color.Red("Error getting current directory: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		rootPath, err := workspace.FindWorkspaceRoot(cwd)
 		if err != nil {
-			color.Red("Not in a Orion workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("not in an orion workspace: %w", err)
 		}
 
 		if cwd != rootPath {
-			color.Red("`orion push` must be run from the workspace root: %s", rootPath)
-			os.Exit(1)
+			return fmt.Errorf("`orion push` must run from workspace root: %s", rootPath)
 		}
 
 		wm, err := workspace.NewManager(rootPath)
 		if err != nil {
-			color.Red("Failed to load workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		// Determine target node
@@ -57,18 +54,16 @@ Examples:
 			targetNodeName = args[0]
 			node, exists := wm.State.Nodes[targetNodeName]
 			if !exists {
-				color.Red("Node '%s' does not exist", targetNodeName)
-				os.Exit(1)
+				return fmt.Errorf("node '%s' does not exist", targetNodeName)
 			}
-			if node.CreatedBy != "user" {
-				color.Red("Node '%s' is not a human node and cannot be pushed with this command", targetNodeName)
-				os.Exit(1)
+			if node.CreatedBy != types.NodeCreatedByUser {
+				return fmt.Errorf("node '%s' is not a human node and cannot be pushed", targetNodeName)
 			}
 		} else {
 			selectedName, err := SelectNode(wm, "push", true)
 			if err != nil {
 				color.Yellow("%v", err)
-				return
+				return nil
 			}
 			targetNodeName = selectedName
 		}
@@ -78,12 +73,12 @@ Examples:
 		fmt.Printf("Pushing branch '%s' to remote...\n", targetNode.ShadowBranch)
 
 		if err := git.PushBranch(wm.State.RepoPath, targetNode.ShadowBranch); err != nil {
-			color.Red("Failed to push branch: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("push branch: %w", err)
 		}
 
 		color.Green("🚀 Successfully pushed '%s' to remote", targetNodeName)
 		fmt.Printf("Branch: %s\n", targetNode.ShadowBranch)
+		return nil
 	},
 }
 

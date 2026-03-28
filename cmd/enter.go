@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"orion/internal/notification"
+	"orion/internal/types"
 	"orion/internal/workspace"
 
 	"github.com/fatih/color"
@@ -25,17 +26,15 @@ If you are already inside tmux, it will switch the current client.
 If not, it will start a new client.`,
 	Args:              cobra.RangeArgs(0, 1),
 	ValidArgsFunction: CompleteNodeNames,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
-			color.Red("Error getting current directory: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		wm, err := workspace.NewManager(cwd)
 		if err != nil {
-			color.Red("Failed to load workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		var nodeName string
@@ -45,22 +44,20 @@ If not, it will start a new client.`,
 			nodeName, err = SelectNode(wm, "enter", true)
 			if err != nil {
 				color.Yellow("%v", err)
-				return
+				return nil
 			}
 		} else {
 			nodeName = args[0]
 			// Check if it is an agent node
-			if node, exists := wm.State.Nodes[nodeName]; exists && node.CreatedBy != "user" {
-				color.Red("Node '%s' is an Agent Node. Please use `orion workflow enter` to access it.", nodeName)
-				os.Exit(1)
+			if node, exists := wm.State.Nodes[nodeName]; exists && node.CreatedBy != types.NodeCreatedByUser {
+				return fmt.Errorf("node '%s' is an agent node; use `orion workflow enter`", nodeName)
 			}
 		}
 
 		fmt.Printf("Entering node '%s'...\n", nodeName)
 		sessionName, err := wm.EnsureNodeSession(nodeName)
 		if err != nil {
-			color.Red("Failed to prepare node session: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("prepare node session: %w", err)
 		}
 
 		if err := notification.EnsureStarted(wm.RootPath); err != nil {
@@ -72,11 +69,11 @@ If not, it will start a new client.`,
 		}
 
 		if err := wm.AttachNodeSession(nodeName); err != nil {
-			color.Red("Failed to enter node: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("enter node: %w", err)
 		}
 
 		// Note: If successful, the process is replaced by tmux, so this won't print.
+		return nil
 	},
 }
 

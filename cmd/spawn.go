@@ -46,22 +46,20 @@ Modes:
 
 If the branch_name does not exist, provide --base to create it from a base branch.`,
 	Args: cobra.ExactArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		branchName := args[0]
 		nodeName := args[1]
 
 		cwd, err := os.Getwd()
 		if err != nil {
-			fmt.Printf("Error getting current directory: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		// TODO: We should probably traverse up to find the workspace root
 		// For now, assume we run from workspace root
 		wm, err := workspace.NewManager(cwd)
 		if err != nil {
-			fmt.Printf("Failed to load workspace: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		mode := "Feature Mode"
@@ -71,12 +69,12 @@ If the branch_name does not exist, provide --base to create it from a base branc
 		fmt.Printf("Spawning node '%s' for branch '%s' (%s)...\n", nodeName, branchName, mode)
 
 		if err := wm.SpawnNode(nodeName, branchName, baseBranch, label, isShadow); err != nil {
-			fmt.Printf("Failed to spawn node: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("spawn node: %w", err)
 		}
 
 		fmt.Printf("✅ Node '%s' created successfully!\n", nodeName)
 		fmt.Printf("Run 'orion enter %s' to start coding.\n", nodeName)
+		return nil
 	},
 }
 

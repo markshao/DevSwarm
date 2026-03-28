@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"orion/internal/log"
 
@@ -44,7 +46,14 @@ func Execute() {
 	rootCmd.CompletionOptions.HiddenDefaultCmd = false
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		if strings.TrimSpace(err.Error()) != "" {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		exitCode := 1
+		var coded interface{ ExitCode() int }
+		if errors.As(err, &coded) {
+			exitCode = coded.ExitCode()
+		}
+		os.Exit(exitCode)
 	}
 }

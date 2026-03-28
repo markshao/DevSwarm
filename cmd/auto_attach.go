@@ -22,7 +22,7 @@ If yes, attaches to that node's tmux session.
 If path is inside workspace but not in any node, attaches to 'orion-root' session at workspace root.
 If not inside any Orion workspace, attaches to a default tmux session named 'default'.`,
 	Args: cobra.MaximumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		targetPath := ""
 
 		// Priority 1: Command line argument
@@ -44,10 +44,8 @@ If not inside any Orion workspace, attaches to a default tmux session named 'def
 			var err error
 			targetPath, err = os.Getwd()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error getting current directory: %v\n", err)
 				log.Error("auto-attach: Error getting current directory: %v", err)
-				fallbackToDefaultSession()
-				return
+				return fallbackToDefaultSession()
 			}
 			log.Info("auto-attach: using targetPath from CWD: %s", targetPath)
 		}
@@ -55,10 +53,8 @@ If not inside any Orion workspace, attaches to a default tmux session named 'def
 		// Ensure targetPath is absolute to handle relative paths correctly
 		absPath, err := filepath.Abs(targetPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error resolving path: %v\n", err)
 			log.Error("auto-attach: Error resolving path %s: %v", targetPath, err)
-			fallbackToDefaultSession()
-			return
+			return fallbackToDefaultSession()
 		}
 
 		// 1. Try to find workspace root
@@ -67,18 +63,15 @@ If not inside any Orion workspace, attaches to a default tmux session named 'def
 		if err != nil {
 			// Not inside a Orion workspace -> Fallback
 			log.Info("auto-attach: Not inside Orion workspace (path: %s)", absPath)
-			fallbackToDefaultSession()
-			return
+			return fallbackToDefaultSession()
 		}
 
 		// 2. Load Workspace Manager
 		wm, err := workspace.NewManager(wsRoot)
 		if err != nil {
 			// Workspace corrupted? -> Fallback
-			fmt.Fprintf(os.Stderr, "Failed to load workspace: %v\n", err)
 			log.Error("auto-attach: Failed to load workspace at %s: %v", wsRoot, err)
-			fallbackToDefaultSession()
-			return
+			return fallbackToDefaultSession()
 		}
 
 		// 3. Find Node by Path
@@ -87,44 +80,41 @@ If not inside any Orion workspace, attaches to a default tmux session named 'def
 			// Path is inside workspace root but not inside a specific node (e.g. repo dir)
 			// Enter the root session for workspace management
 			log.Info("auto-attach: Path %s is inside workspace but not in any node, entering root session", absPath)
-			enterRootSession(wsRoot)
-			return
+			return enterRootSession(wsRoot)
 		}
 
 		// 4. Enter Node
 		log.Info("auto-attach: Attaching to node '%s'", nodeName)
 		if err := wm.EnterNode(nodeName); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to enter node '%s': %v\n", nodeName, err)
 			log.Error("auto-attach: Failed to enter node '%s': %v", nodeName, err)
-			fallbackToDefaultSession()
-			return
+			return fallbackToDefaultSession()
 		}
+		return nil
 	},
 }
 
-func enterRootSession(wsRoot string) {
+func enterRootSession(wsRoot string) error {
 	sessionName := "orion-root"
 	fmt.Printf("Attaching to Orion root session '%s' (workspace: %s)...\n", sessionName, wsRoot)
 	log.Info("auto-attach: Entering root session at %s", wsRoot)
 	if err := tmux.EnsureAndAttach(sessionName, wsRoot); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to attach to root session: %v\n", err)
 		log.Error("auto-attach: Failed to attach to root session: %v", err)
 		// Fallback to default if root session fails
-		fallbackToDefaultSession()
+		return fallbackToDefaultSession()
 	}
+	return nil
 }
 
-func fallbackToDefaultSession() {
+func fallbackToDefaultSession() error {
 	sessionName := "default"
 	cwd, _ := os.Getwd()
 	fmt.Printf("Attaching to default tmux session '%s'...\n", sessionName)
 	log.Info("auto-attach: Fallback to default session")
 	if err := tmux.EnsureAndAttach(sessionName, cwd); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to attach to default session: %v\n", err)
 		log.Error("auto-attach: Failed to attach to default session: %v", err)
-		// Last resort: just exit, user will see the error in terminal or shell will close
-		os.Exit(1)
+		return fmt.Errorf("attach to default session: %w", err)
 	}
+	return nil
 }
 
 func init() {

@@ -9,7 +9,6 @@ import (
 	"orion/internal/notification"
 	"orion/internal/workspace"
 
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -29,57 +28,52 @@ var notificationServiceCmd = &cobra.Command{
 var notificationServiceStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the workspace notification service",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		rootPath, err := resolveWorkspaceRoot()
 		if err != nil {
-			color.Red("Failed to resolve workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("resolve workspace: %w", err)
 		}
 		if err := notification.EnsureStarted(rootPath); err != nil {
-			color.Red("Failed to start notification service: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("start notification service: %w", err)
 		}
 		fmt.Println("Notification service is running.")
+		return nil
 	},
 }
 
 var notificationServiceStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the workspace notification service",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		rootPath, err := resolveWorkspaceRoot()
 		if err != nil {
-			color.Red("Failed to resolve workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("resolve workspace: %w", err)
 		}
 		if err := notification.Stop(rootPath); err != nil {
-			color.Red("Failed to stop notification service: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("stop notification service: %w", err)
 		}
 		fmt.Println("Notification service stopped.")
+		return nil
 	},
 }
 
 var notificationServiceStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show notification service status",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		rootPath, err := resolveWorkspaceRoot()
 		if err != nil {
-			color.Red("Failed to resolve workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("resolve workspace: %w", err)
 		}
 
 		status, running, err := notification.GetServiceStatus(rootPath)
 		if err != nil {
-			color.Red("Failed to load notification service status: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load notification service status: %w", err)
 		}
 
 		registry, err := notification.ReadRegistry(rootPath)
 		if err != nil {
-			color.Red("Failed to load watcher registry: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load watcher registry: %w", err)
 		}
 
 		fmt.Printf("Workspace: %s\n", rootPath)
@@ -95,27 +89,26 @@ var notificationServiceStatusCmd = &cobra.Command{
 		if status.LastError != "" {
 			fmt.Printf("Last Err:  %s\n", status.LastError)
 		}
+		return nil
 	},
 }
 
 var notificationServiceListWatchersCmd = &cobra.Command{
 	Use:   "list-watchers",
 	Short: "List registered notification watchers",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		rootPath, err := resolveWorkspaceRoot()
 		if err != nil {
-			color.Red("Failed to resolve workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("resolve workspace: %w", err)
 		}
 
 		registry, err := notification.ReadRegistry(rootPath)
 		if err != nil {
-			color.Red("Failed to load watcher registry: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("load watcher registry: %w", err)
 		}
 		if len(registry.Watchers) == 0 {
 			fmt.Println("No watchers registered.")
-			return
+			return nil
 		}
 
 		verbose, _ := cmd.Flags().GetBool("verbose")
@@ -203,6 +196,7 @@ var notificationServiceListWatchersCmd = &cobra.Command{
 			)
 		}
 		w.Flush()
+		return nil
 	},
 }
 
@@ -236,20 +230,19 @@ func flattenMultiline(s string) string {
 var notificationServiceCleanWatchersCmd = &cobra.Command{
 	Use:   "clean-watchers",
 	Short: "Clean all registered notification watchers",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		rootPath, err := resolveWorkspaceRoot()
 		if err != nil {
-			color.Red("Failed to resolve workspace: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("resolve workspace: %w", err)
 		}
 
 		removed, err := notification.ClearWatchers(rootPath)
 		if err != nil {
-			color.Red("Failed to clean watcher registry: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("clean watcher registry: %w", err)
 		}
 
 		fmt.Printf("Cleaned %d watcher(s).\n", removed)
+		return nil
 	},
 }
 
@@ -257,16 +250,15 @@ var notificationServiceRunCmd = &cobra.Command{
 	Use:    "run",
 	Short:  "Run the workspace notification service loop",
 	Hidden: true,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		rootPath, _ := cmd.Flags().GetString("workspace")
 		if rootPath == "" {
-			color.Red("--workspace is required")
-			os.Exit(1)
+			return fmt.Errorf("--workspace is required")
 		}
 		if err := notification.Run(rootPath); err != nil {
-			color.Red("Notification service failed: %v", err)
-			os.Exit(1)
+			return fmt.Errorf("notification service failed: %w", err)
 		}
+		return nil
 	},
 }
 

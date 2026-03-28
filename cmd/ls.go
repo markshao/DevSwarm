@@ -17,20 +17,18 @@ import (
 var lsCmd = &cobra.Command{
 	Use:   "ls",
 	Short: "List all development nodes",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		showAll, _ := cmd.Flags().GetBool("all")
 		quiet, _ := cmd.Flags().GetBool("quiet")
 
 		cwd, err := os.Getwd()
 		if err != nil {
-			fmt.Printf("Error getting current directory: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("get current directory: %w", err)
 		}
 
 		wm, err := workspace.NewManager(cwd)
 		if err != nil {
-			fmt.Printf("Failed to load workspace: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("load workspace: %w", err)
 		}
 
 		// Quiet mode: only output node names, suitable for piping
@@ -39,15 +37,16 @@ var lsCmd = &cobra.Command{
 			for _, name := range names {
 				node := wm.State.Nodes[name]
 				// Filter out agent nodes unless --all is specified
-				if !showAll && node.CreatedBy != "user" {
+				if !showAll && node.CreatedBy != types.NodeCreatedByUser {
 					continue
 				}
 				fmt.Println(name)
 			}
-			return
+			return nil
 		}
 
 		fmt.Print(renderNodeList(wm.State.RepoPath, wm.State.Nodes, showAll))
+		return nil
 	},
 }
 
@@ -94,7 +93,7 @@ func renderNodeList(repoPath string, nodes map[string]types.Node, showAll bool) 
 func sortedNodeNames(nodes map[string]types.Node, showAll bool) []string {
 	names := make([]string, 0, len(nodes))
 	for name, node := range nodes {
-		if !showAll && node.CreatedBy != "user" {
+		if !showAll && node.CreatedBy != types.NodeCreatedByUser {
 			continue
 		}
 		names = append(names, name)

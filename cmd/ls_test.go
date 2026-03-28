@@ -12,9 +12,9 @@ import (
 
 func TestSortedNodeNamesFiltersAndSorts(t *testing.T) {
 	nodes := map[string]types.Node{
-		"zeta":  {CreatedBy: "user"},
+		"zeta":  {CreatedBy: types.NodeCreatedByUser},
 		"alpha": {CreatedBy: "workflow-1"},
-		"beta":  {CreatedBy: "user"},
+		"beta":  {CreatedBy: types.NodeCreatedByUser},
 	}
 
 	got := sortedNodeNames(nodes, false)
